@@ -1,0 +1,1697 @@
+'use strict';
+
+(function () {
+const bootstrap = JSON.parse(document.getElementById('bootstrap').textContent);
+const isChannelPage = Boolean(bootstrap.channelId);
+const ORDERS_API = bootstrap.apiPath || '/api/orders';
+const ORDERS_EXPORT_API = bootstrap.exportPath || '/api/orders/export';
+const channelLabel = bootstrap.channelLabel || 'Trendyol Pazaryeri';
+const tableWrap = document.getElementById('ordersTableWrap');
+const tableBody = document.getElementById('ordersBody');
+const footerEl = document.getElementById('ordersFooter');
+const toastEl = document.getElementById('ordersToast');
+const modalBackdrop = document.getElementById('orderModalBackdrop');
+const modalBody = document.getElementById('orderModalBody');
+const modalTitle = document.getElementById('orderModalTitle');
+const filterForm = document.getElementById('ordersFilterForm');
+const daysSelect = document.getElementById('daysSelect');
+const startDateInput = document.getElementById('startDate');
+const endDateInput = document.getElementById('endDate');
+const statusFilter = document.getElementById('statusFilter');
+const profitFilter = document.getElementById('profitFilter');
+const matchingFilter = document.getElementById('matchingFilter');
+const matchingFilterField = document.getElementById('matchingFilterField');
+const chartWrap = document.getElementById('ordersChartWrap');
+const uberOrdersSubnav = document.getElementById('uberOrdersSubnav');
+const ordersListPanel = document.getElementById('ordersListPanel');
+const uberLossProductsPanel = document.getElementById('uberLossProductsPanel');
+const lossProductsBody = document.getElementById('lossProductsBody');
+const lossProductsFooter = document.getElementById('lossProductsFooter');
+const lossProductsSearch = document.getElementById('lossProductsSearch');
+const lossProductsIssuesOnly = document.getElementById('lossProductsIssuesOnly');
+const lossProductsUnmapAllBtn = document.getElementById('lossProductsUnmapAllBtn');
+const LOSS_PRODUCT_MATCHING_ISSUES = ['missing_master', 'barcode_conflict', 'review_required', 'pending', 'unmapped'];
+const LOSS_PRODUCT_MATCHING_SEVERITY = {
+  barcode_conflict: 6,
+  missing_master: 5,
+  unmapped: 4,
+  review_required: 4,
+  pending: 3,
+  auto_matched: 2,
+  legacy_fallback: 2,
+  manual_confirmed: 1,
+  legacy: 0
+};
+
+const ORDER_TIMEZONE = bootstrap.orderDateTimezone || 'UTC';
+
+function normalizeOrderTimestamp(value) {
+  if (value === '' || value === null || value === undefined) return 0;
+
+  let n = Number(value);
+  if (Number.isFinite(n) && n > 0) {
+    if (n < 1e12) n *= 1000;
+    return n;
+  }
+
+  const parsed = Date.parse(String(value));
+  if (Number.isFinite(parsed) && parsed > 0) return parsed;
+
+  return 0;
+}
+
+function formatOrderDate(timestamp) {
+  const ms = normalizeOrderTimestamp(timestamp);
+  if (!ms) return '';
+
+  const parts = new Intl.DateTimeFormat('tr-TR', {
+    timeZone: ORDER_TIMEZONE,
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23'
+  }).formatToParts(new Date(ms));
+
+  const get = (type) => parts.find((part) => part.type === type)?.value || '';
+  const month = get('month').replace(/\.$/, '');
+
+  return `${get('day')} ${month} ${get('year')} - ${get('hour')}:${get('minute')}`;
+}
+
+function orderDayKey(timestamp) {
+  const ms = normalizeOrderTimestamp(timestamp);
+  if (!ms) return '';
+
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: ORDER_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).format(new Date(ms));
+}
+
+function orderWeekKey(timestamp) {
+  const ms = normalizeOrderTimestamp(timestamp);
+  if (!ms) return '';
+
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: ORDER_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).formatToParts(new Date(ms));
+
+  const get = (type) => Number(parts.find((part) => part.type === type)?.value || 0);
+  const date = new Date(Date.UTC(get('year'), get('month') - 1, get('day')));
+  const day = date.getUTCDay() || 7;
+  date.setUTCDate(date.getUTCDate() - day + 1);
+
+  return date.toISOString().slice(0, 10);
+}
+
+function formatBucketLabel(key, mode) {
+  if (!key) return '';
+  const [y, m, d] = key.split('-').map(Number);
+  const date = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
+  if (mode === 'week') {
+    return date.toLocaleDateString('tr-TR', {
+      timeZone: ORDER_TIMEZONE,
+      day: '2-digit',
+      month: 'short'
+    }) + ' hft';
+  }
+  return date.toLocaleDateString('tr-TR', {
+    timeZone: ORDER_TIMEZONE,
+    day: '2-digit',
+    month: 'short'
+  });
+}
+
+let tableScale = 0.9;
+let allRows = [];
+let fetchedCount = 0;
+let activeRange = { startMs: 0, endMs: 0 };
+let activeDays = 14;
+let chartMode = 'day';
+let sortKey = 'orderDateMs';
+let sortDir = 'desc';
+let lastDataQuality = null;
+let lastOrderSources = null;
+let lastMatchingSummary = null;
+let pendingOrderNumber = null;
+let orderDeepLinkHandled = false;
+let activeOrdersView = 'orders';
+
+const COL_COUNT = 8;
+const qualityBannerEl = document.getElementById('ordersQualityBanner');
+const matchingBannerEl = document.getElementById('ordersMatchingBanner');
+const matchingStripEl = document.getElementById('ordersMatchingStrip');
+const quickFilterRoot = document.getElementById('ordersQuickFilters');
+
+if (bootstrap.authRequired && !getStoredToken()) {
+  redirectToLogin();
+} else {
+  bindEvents();
+  initMatchingFilters();
+  setDefaultCustomDates();
+  applyInitialQueryParams();
+  if (!isChannelPage) loadEmailSettings();
+  if (isChannelPage) window.BuyBoxChannelPage?.setOrdersLoading(true);
+  loadOrders();
+}
+
+function applyInitialQueryParams() {
+  const params = new URLSearchParams(window.location.search);
+  const profit = params.get('profit');
+  if (profit && profitFilter) {
+    if (['all', 'profit', 'loss', 'zero'].includes(profit)) {
+      profitFilter.value = profit;
+    }
+  }
+  const order = String(params.get('order') || '').trim();
+  if (order) {
+    pendingOrderNumber = order;
+    orderDeepLinkHandled = false;
+  }
+  const days = params.get('days');
+  if (days && daysSelect && ['7', '14', '30', '60', '1'].includes(days)) {
+    daysSelect.value = days;
+    toggleCustomDates();
+  }
+  const matching = params.get('matching');
+  if (matching && matchingFilter && ['all', 'unmapped', 'needs_review'].includes(matching)) {
+    matchingFilter.value = matching;
+  }
+  const view = String(params.get('view') || '').trim();
+  if (view === 'loss-products' && uberLossProductsPanel) {
+    switchOrdersView('loss-products', { syncUrl: false });
+  }
+  syncQuickFilterButtons();
+  syncMatchingQuickButtons();
+}
+
+function bindEvents() {
+  filterForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    loadOrders();
+  });
+  document.getElementById('clearOrderFilters').addEventListener('click', clearFilters);
+  document.getElementById('refreshOrders').addEventListener('click', () => loadOrders(true));
+  document.getElementById('exportReport').addEventListener('click', exportReport);
+  const zoomOut = document.getElementById('zoomOut');
+  const zoomIn = document.getElementById('zoomIn');
+  const zoomReset = document.getElementById('zoomReset');
+  if (zoomOut) zoomOut.addEventListener('click', () => setZoom(tableScale - 0.05));
+  if (zoomIn) zoomIn.addEventListener('click', () => setZoom(tableScale + 0.05));
+  if (zoomReset) zoomReset.addEventListener('click', () => setZoom(0.9));
+  daysSelect.addEventListener('change', () => {
+    toggleCustomDates();
+    if (daysSelect.value !== 'custom') loadOrders();
+  });
+  statusFilter.addEventListener('change', refreshView);
+  profitFilter.addEventListener('change', () => {
+    syncQuickFilterButtons();
+    syncProfitQueryParam();
+    refreshView();
+  });
+  matchingFilter?.addEventListener('change', () => {
+    syncMatchingQueryParam();
+    syncMatchingQuickButtons();
+    refreshView();
+  });
+
+  if (quickFilterRoot) {
+    quickFilterRoot.querySelectorAll('.orders-quick-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const value = btn.dataset.profit || 'all';
+        if (!profitFilter || profitFilter.value === value) return;
+        profitFilter.value = value;
+        syncQuickFilterButtons();
+        syncProfitQueryParam();
+        refreshView();
+      });
+    });
+  }
+
+  uberOrdersSubnav?.querySelectorAll('[data-orders-view]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      switchOrdersView(btn.dataset.ordersView || 'orders');
+    });
+  });
+  lossProductsSearch?.addEventListener('input', renderLossProducts);
+  lossProductsIssuesOnly?.addEventListener('change', renderLossProducts);
+  lossProductsUnmapAllBtn?.addEventListener('click', unmapAllLossProducts);
+  document.getElementById('orderModalClose').addEventListener('click', closeModal);
+  modalBackdrop.addEventListener('click', (e) => {
+    if (e.target === modalBackdrop) closeModal();
+  });
+
+  if (chartWrap) {
+    document.querySelectorAll('.chart-mode-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        chartMode = btn.dataset.mode;
+        document.querySelectorAll('.chart-mode-btn').forEach((el) => el.classList.toggle('active', el === btn));
+        renderChart();
+      });
+    });
+  }
+
+  document.querySelectorAll('.orders-table th[data-sort]').forEach((th) => {
+    th.addEventListener('click', () => {
+      const key = th.dataset.sort;
+      if (sortKey === key) sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+      else {
+        sortKey = key;
+        sortDir = 'desc';
+      }
+      renderTable();
+    });
+  });
+
+  const logoutBtn = document.getElementById('logoutBtn');
+  if (logoutBtn) logoutBtn.addEventListener('click', logout);
+
+  window.BuyBoxCommon?.initPlatformNav?.();
+
+  const emailSave = document.getElementById('emailSave');
+  if (emailSave) {
+    emailSave.addEventListener('click', saveEmailSettings);
+    document.getElementById('emailTest').addEventListener('click', testEmail);
+    document.getElementById('emailCheckNow').addEventListener('click', checkEmailNow);
+  }
+}
+
+function setDefaultCustomDates() {
+  const end = new Date();
+  const start = new Date();
+  start.setDate(end.getDate() - 13);
+  endDateInput.value = toInputDate(end);
+  startDateInput.value = toInputDate(start);
+  toggleCustomDates();
+}
+
+function toggleCustomDates() {
+  const custom = daysSelect.value === 'custom';
+  startDateInput.disabled = !custom;
+  endDateInput.disabled = !custom;
+  document.querySelectorAll('.custom-date-field').forEach((el) => {
+    el.classList.toggle('disabled', !custom);
+  });
+}
+
+function initMatchingFilters() {
+  if (!matchingEnabled()) return;
+  if (matchingFilterField) matchingFilterField.hidden = false;
+  injectMatchingQuickFilter();
+}
+
+function injectMatchingQuickFilter() {
+  if (!quickFilterRoot || quickFilterRoot.querySelector('[data-matching="unmapped"]')) return;
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'orders-quick-btn';
+  btn.dataset.matching = 'unmapped';
+  btn.textContent = 'Eşleşmemiş';
+  btn.addEventListener('click', () => {
+    if (!matchingFilter) return;
+    matchingFilter.value = matchingFilter.value === 'unmapped' ? 'all' : 'unmapped';
+    syncMatchingQueryParam();
+    syncMatchingQuickButtons();
+    refreshView();
+  });
+  quickFilterRoot.appendChild(btn);
+}
+
+function syncMatchingQuickButtons() {
+  const btn = quickFilterRoot?.querySelector('[data-matching="unmapped"]');
+  if (btn && matchingFilter) {
+    btn.classList.toggle('active', matchingFilter.value === 'unmapped');
+  }
+}
+
+function syncMatchingQueryParam() {
+  if (!matchingFilter || !matchingEnabled()) return;
+  const params = new URLSearchParams(window.location.search);
+  if (matchingFilter.value === 'all') params.delete('matching');
+  else params.set('matching', matchingFilter.value);
+  const next = params.toString();
+  window.history.replaceState({}, '', next ? `${window.location.pathname}?${next}` : window.location.pathname);
+}
+
+function orderMatchesMatchingFilter(row, filter) {
+  const value = String(filter || 'all').trim();
+  if (!value || value === 'all') return true;
+  const lines = row.lines || [];
+  if (!lines.length) return false;
+
+  if (value === 'unmapped') {
+    return lines.some((line) =>
+      line.mappingSource === 'unmapped'
+      || line.mappingStatus === 'unmapped'
+      || line.mappingStatus === 'missing_master'
+    );
+  }
+
+  if (value === 'needs_review') {
+    return lines.some((line) =>
+      ['pending', 'review_required', 'barcode_conflict', 'missing_master', 'unmapped'].includes(line.mappingStatus)
+      || line.mappingSource === 'unmapped'
+      || line.mappingSource === 'legacy_fallback'
+    );
+  }
+
+  return true;
+}
+
+function syncQuickFilterButtons() {
+  if (!quickFilterRoot || !profitFilter) return;
+  const value = profitFilter.value || 'all';
+  quickFilterRoot.querySelectorAll('.orders-quick-btn').forEach((btn) => {
+    btn.classList.toggle('active', (btn.dataset.profit || 'all') === value);
+  });
+}
+
+function syncProfitQueryParam() {
+  if (!profitFilter) return;
+  const params = new URLSearchParams(window.location.search);
+  if (profitFilter.value === 'all') params.delete('profit');
+  else params.set('profit', profitFilter.value);
+  const qs = params.toString();
+  const next = qs ? window.location.pathname + '?' + qs : window.location.pathname;
+  history.replaceState(null, '', next);
+}
+
+function syncOrderQueryParam(orderNumber) {
+  const params = new URLSearchParams(window.location.search);
+  const order = String(orderNumber || '').trim();
+  if (order) params.set('order', order);
+  else params.delete('order');
+  const qs = params.toString();
+  history.replaceState(null, '', qs ? window.location.pathname + '?' + qs : window.location.pathname);
+}
+
+function clearFilters() {
+  daysSelect.value = '14';
+  statusFilter.value = '';
+  profitFilter.value = 'all';
+  if (matchingFilter) matchingFilter.value = 'all';
+  syncQuickFilterButtons();
+  syncMatchingQuickButtons();
+  syncProfitQueryParam();
+  syncMatchingQueryParam();
+  setDefaultCustomDates();
+  loadOrders();
+}
+
+function buildQueryParams() {
+  const params = new URLSearchParams();
+  if (daysSelect.value === 'custom') {
+    if (startDateInput.value) params.set('startDate', startDateInput.value);
+    if (endDateInput.value) params.set('endDate', endDateInput.value);
+  } else {
+    params.set('days', daysSelect.value || '14');
+  }
+  return params;
+}
+
+function renderYemeksepetiEmptyHint(data) {
+  if (bootstrap.channelId !== 'yemeksepeti') return;
+  let banner = document.getElementById('ysOrdersEmptyHint');
+  if (!banner) {
+    banner = document.createElement('div');
+    banner.id = 'ysOrdersEmptyHint';
+    banner.className = 'orders-quality-banner';
+    const anchor = document.getElementById('ordersQualityBanner');
+    if (anchor?.parentNode) {
+      anchor.parentNode.insertBefore(banner, anchor.nextSibling);
+    }
+  }
+  const sources = data.orderSources;
+  if ((data.rows || []).length > 0 || !sources) {
+    banner.hidden = true;
+    banner.textContent = '';
+    return;
+  }
+  banner.hidden = false;
+  banner.innerHTML =
+    'Yemeksepeti Partner API bu dönemde <strong>0</strong> sipariş döndürdü' +
+    (sources.opsWebhook ? ` · Webhook/Ops kaynağında <strong>${sources.opsWebhook}</strong> kayıt var (tam gövde eksik olabilir)` : '') +
+    '. Canlı siparişler webhook ile gelir — ' +
+    '<a href="/quick-commerce/integrations">Hızlı Teslimat → Entegrasyonlar</a> ve ' +
+    '<a href="https://partner-app.yemeksepeti.com/" target="_blank" rel="noopener">Partner Portal</a> → Shop Integrations loglarını kontrol edin.';
+}
+
+async function loadOrders(forceRefresh = false) {
+  const refreshBtn = document.getElementById('refreshOrders');
+  refreshBtn.disabled = true;
+  footerEl.textContent = forceRefresh
+    ? `${channelLabel} API'den siparişler çekiliyor…`
+    : 'Siparişler yükleniyor…';
+  tableBody.innerHTML = '<tr><td colspan="' + COL_COUNT + '" class="orders-loading">Siparişler çekiliyor, lütfen bekleyin…</td></tr>';
+  if (lossProductsBody) {
+    lossProductsBody.innerHTML = '<tr><td colspan="10" class="orders-loading">Siparişler çekiliyor, lütfen bekleyin…</td></tr>';
+  }
+
+  try {
+    const params = buildQueryParams();
+    if (forceRefresh) params.set('force', '1');
+    const response = await authFetch(ORDERS_API + '?' + params.toString());
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Yüklenemedi');
+
+    allRows = data.rows || [];
+    fetchedCount = data.fetched ?? allRows.length;
+    lastDataQuality = data.dataQuality || null;
+    lastOrderSources = data.orderSources || null;
+    lastMatchingSummary = data.matchingSummary || null;
+    activeRange = {
+      startMs: data.range?.startMs || 0,
+      endMs: data.range?.endMs || 0
+    };
+    activeDays = Number(data.range?.days) || Number(params.get('days')) || 30;
+    populateStatusOptions(data.statuses || []);
+    refreshView({
+      dataQuality: data.dataQuality,
+      matchingSummary: data.matchingSummary,
+      orderSources: data.orderSources
+    });
+    if (isChannelPage) {
+      window.BuyBoxChannelPage?.updateOrdersStatus({
+        configured: true,
+        skipped: Boolean(data.skipped),
+        cooldownSeconds: data.cooldownSeconds || 0,
+        orderCount: allRows.length,
+        fetched: fetchedCount,
+        stats: data.stats || null,
+        orderSources: data.orderSources || null,
+        message: data.message || ''
+      });
+    }
+    renderYemeksepetiEmptyHint(data);
+    if (data.skipped) {
+      showToast(data.message + ' (' + data.cooldownSeconds + ' sn)');
+      return;
+    }
+    const dq = data.dataQuality;
+    const dhl = data.dhlShipping;
+    let toast = 'Siparişler güncellendi.';
+    if (dhl && dhl.queried > 0) {
+      toast += ' DHL: ' + dhl.resolved + ' net, ' + dhl.pending + ' bekliyor.';
+    }
+    if (dq && dq.withWarnings > 0) {
+      showToast('Güncellendi — ' + dq.withWarnings + ' siparişte veri uyarısı var.' + (dhl?.queried ? ' DHL: ' + dhl.resolved + ' net.' : ''));
+    } else {
+      showToast(toast);
+    }
+  } catch (error) {
+    tableBody.innerHTML = '<tr><td colspan="' + COL_COUNT + '" class="orders-loading">' + esc(error.message) + '</td></tr>';
+    if (lossProductsBody) {
+      lossProductsBody.innerHTML = '<tr><td colspan="10" class="orders-loading">' + esc(error.message) + '</td></tr>';
+    }
+    footerEl.textContent = 'Yüklenemedi: ' + error.message;
+    if (isChannelPage) {
+      window.BuyBoxChannelPage?.updateOrdersStatus({
+        configured: !String(error.message || '').includes('API bilgileri eksik'),
+        error: error.message || 'Yüklenemedi'
+      });
+    }
+    showToast(error.message);
+  } finally {
+    refreshBtn.disabled = false;
+  }
+}
+
+function populateStatusOptions(statuses) {
+  const current = statusFilter.value;
+  statusFilter.innerHTML = '<option value="">Tüm durumlar</option>' +
+    statuses.map((status) => '<option value="' + escAttr(status) + '">' + esc(translateStatus(status)) + '</option>').join('');
+  if (current && statuses.includes(current)) statusFilter.value = current;
+}
+
+function translateStatus(status) {
+  const map = {
+    Created: 'Oluşturuldu',
+    Picking: 'Hazırlanıyor',
+    Invoiced: 'Faturalandı',
+    Shipped: 'Kargoda',
+    Delivered: 'Teslim edildi',
+    Cancelled: 'İptal',
+    UnDelivered: 'Teslim edilemedi',
+    Returned: 'İade',
+    Repack: 'Yeniden paketlendi',
+    UnPacked: 'Paket açıldı',
+    Awaiting: 'Bekliyor'
+  };
+  return map[status] || status;
+}
+
+function refreshView(meta) {
+  const rows = filteredRows();
+  const dq = meta?.dataQuality ?? lastDataQuality;
+  renderSummary(rows, dq, {
+    orderSources: meta?.orderSources ?? lastOrderSources,
+    matchingSummary: meta?.matchingSummary ?? lastMatchingSummary
+  });
+  renderMatchingSummary(meta?.matchingSummary ?? lastMatchingSummary);
+  renderQualityBanner(dq);
+  if (activeOrdersView === 'loss-products') {
+    renderLossProducts();
+  } else {
+    renderChart(rows);
+    renderTable();
+  }
+  syncQuickFilterButtons();
+  const shown = rows.length;
+  const fetchedNote = fetchedCount > shown ? ' (' + fetchedCount + ' API kaydından süzüldü)' : '';
+  let footer = shown + ' sipariş gösteriliyor' + fetchedNote;
+  if (dq && dq.withWarnings > 0) {
+    footer += ' · ' + dq.withWarnings + ' uyarılı kayıt';
+  }
+  if (activeOrdersView !== 'loss-products') {
+    footerEl.textContent = footer;
+  }
+  tryOpenPendingOrder();
+}
+
+function tryOpenPendingOrder() {
+  if (!pendingOrderNumber || orderDeepLinkHandled) return;
+
+  const target = pendingOrderNumber;
+  let rows = sortedRows(filteredRows());
+  let index = rows.findIndex((row) => String(row.orderNumber) === target);
+
+  if (index < 0 && profitFilter && profitFilter.value !== 'all') {
+    profitFilter.value = 'all';
+    syncQuickFilterButtons();
+    syncProfitQueryParam();
+    rows = sortedRows(filteredRows());
+    index = rows.findIndex((row) => String(row.orderNumber) === target);
+  }
+
+  if (index < 0) return;
+
+  orderDeepLinkHandled = true;
+  openDetail(index);
+}
+
+function rowMatchesDateRange(row) {
+  const ms = normalizeOrderTimestamp(row.orderDateMs);
+  if (!ms) return false;
+  if (activeRange.startMs && ms < activeRange.startMs) return false;
+  if (activeRange.endMs && ms > activeRange.endMs) return false;
+  return true;
+}
+
+function filteredRows() {
+  let rows = allRows.slice();
+  const status = statusFilter.value;
+  const filter = profitFilter.value;
+  const matching = matchingFilter?.value || 'all';
+
+  rows = rows.filter(rowMatchesDateRange);
+
+  if (status) rows = rows.filter((r) => String(r.status) === status);
+  if (filter === 'profit') rows = rows.filter((r) => r.netProfit > 0);
+  if (filter === 'loss') rows = rows.filter((r) => r.netProfit < 0);
+  if (filter === 'zero') rows = rows.filter((r) => r.netProfit === 0);
+  if (matchingEnabled() && matching !== 'all') {
+    rows = rows.filter((row) => orderMatchesMatchingFilter(row, matching));
+  }
+  return rows;
+}
+
+function worseLossProductStatus(current, next) {
+  const a = LOSS_PRODUCT_MATCHING_SEVERITY[current] ?? 0;
+  const b = LOSS_PRODUCT_MATCHING_SEVERITY[next] ?? 0;
+  return b >= a ? next : current;
+}
+
+function lossProductHasIssue(item) {
+  return LOSS_PRODUCT_MATCHING_ISSUES.includes(item.mappingStatus) || (item.costWarnings && item.costWarnings.length > 0);
+}
+
+function filteredRowsForLossProducts() {
+  let rows = allRows.slice();
+  const status = statusFilter.value;
+  const matching = matchingFilter?.value || 'all';
+
+  rows = rows.filter(rowMatchesDateRange);
+  if (status) rows = rows.filter((r) => String(r.status) === status);
+  if (matchingEnabled() && matching !== 'all') {
+    rows = rows.filter((row) => orderMatchesMatchingFilter(row, matching));
+  }
+  return rows;
+}
+
+function aggregateLossProductsClient(rows) {
+  const byBarcode = new Map();
+
+  for (const order of rows || []) {
+    if (Number(order.netProfit) >= 0) continue;
+
+    for (const line of order.lines || []) {
+      const barcode = String(line.barcode || '').trim();
+      if (!barcode) continue;
+
+      let entry = byBarcode.get(barcode);
+      if (!entry) {
+        entry = {
+          barcode,
+          productName: line.productName || barcode,
+          masterBarcode: line.masterBarcode || '',
+          mappingStatus: line.mappingStatus || 'legacy',
+          costWarnings: [],
+          costWarningSet: new Set(),
+          lossOrderNumbers: [],
+          lossOrderSet: new Set(),
+          lineCount: 0,
+          quantity: 0,
+          totalSales: 0,
+          totalCost: 0,
+          totalCommission: 0,
+          totalLineNet: 0,
+          poolMatchUrl: line.poolMatchUrl || null
+        };
+        byBarcode.set(barcode, entry);
+      }
+
+      entry.lineCount += 1;
+      entry.quantity += Number(line.quantity || 0);
+      entry.totalSales += Number(line.lineSalesAmount || 0);
+      entry.totalCost += Number(line.totalProductCost || 0);
+      entry.totalCommission += Number(line.commissionAmount || 0);
+      entry.totalLineNet += Number(line.lineNetBeforeFees || 0);
+      entry.mappingStatus = worseLossProductStatus(entry.mappingStatus, line.mappingStatus || 'legacy');
+      if (line.masterBarcode && !entry.masterBarcode) entry.masterBarcode = line.masterBarcode;
+      if (line.poolMatchUrl && !entry.poolMatchUrl) entry.poolMatchUrl = line.poolMatchUrl;
+
+      const orderNumber = String(order.orderNumber || '').trim();
+      if (orderNumber && !entry.lossOrderSet.has(orderNumber)) {
+        entry.lossOrderSet.add(orderNumber);
+        entry.lossOrderNumbers.push(orderNumber);
+      }
+
+      for (const warning of line.costWarnings || []) {
+        const text = String(warning || '').trim();
+        if (!text || entry.costWarningSet.has(text)) continue;
+        entry.costWarningSet.add(text);
+        entry.costWarnings.push(text);
+      }
+    }
+  }
+
+  return Array.from(byBarcode.values())
+    .map((item) => ({
+      barcode: item.barcode,
+      productName: item.productName,
+      masterBarcode: item.masterBarcode,
+      mappingStatus: item.mappingStatus,
+      costWarnings: item.costWarnings,
+      lossOrderNumbers: item.lossOrderNumbers,
+      lossOrderCount: item.lossOrderNumbers.length,
+      lineCount: item.lineCount,
+      quantity: item.quantity,
+      totalSales: roundMoney(item.totalSales),
+      totalCost: roundMoney(item.totalCost),
+      totalCommission: roundMoney(item.totalCommission),
+      totalLineNet: roundMoney(item.totalLineNet),
+      poolMatchUrl: item.poolMatchUrl
+    }))
+    .sort((a, b) => a.totalLineNet - b.totalLineNet || b.lossOrderCount - a.lossOrderCount);
+}
+
+function roundMoney(value) {
+  return Math.round((Number(value) || 0) * 100) / 100;
+}
+
+function switchOrdersView(view, options = {}) {
+  if (!uberLossProductsPanel) return;
+  activeOrdersView = view === 'loss-products' ? 'loss-products' : 'orders';
+
+  uberOrdersSubnav?.querySelectorAll('[data-orders-view]').forEach((btn) => {
+    const active = btn.dataset.ordersView === activeOrdersView;
+    btn.classList.toggle('active', active);
+    btn.setAttribute('aria-selected', active ? 'true' : 'false');
+  });
+
+  ordersListPanel?.toggleAttribute('hidden', activeOrdersView !== 'orders');
+  uberLossProductsPanel.toggleAttribute('hidden', activeOrdersView !== 'loss-products');
+  quickFilterRoot?.toggleAttribute('hidden', activeOrdersView !== 'orders');
+
+  if (activeOrdersView === 'loss-products') {
+    renderLossProducts();
+  } else {
+    renderChart(filteredRows());
+    renderTable();
+    const shown = filteredRows().length;
+    const fetchedNote = fetchedCount > shown ? ' (' + fetchedCount + ' API kaydından süzüldü)' : '';
+    footerEl.textContent = shown + ' sipariş gösteriliyor' + fetchedNote;
+  }
+
+  if (options.syncUrl !== false) {
+    syncOrdersViewQueryParam();
+  }
+}
+
+function syncOrdersViewQueryParam() {
+  const params = new URLSearchParams(window.location.search);
+  if (activeOrdersView === 'loss-products') params.set('view', 'loss-products');
+  else params.delete('view');
+  const next = params.toString();
+  const url = next ? window.location.pathname + '?' + next : window.location.pathname;
+  window.history.replaceState({}, '', url);
+}
+
+function currentLossProductItems() {
+  const aggregated = aggregateLossProductsClient(filteredRowsForLossProducts());
+  const query = String(lossProductsSearch?.value || '').trim().toLowerCase();
+  const issuesOnly = Boolean(lossProductsIssuesOnly?.checked);
+  let items = aggregated;
+
+  if (issuesOnly) {
+    items = items.filter((item) => lossProductHasIssue(item));
+  }
+  if (query) {
+    items = items.filter((item) => {
+      const haystack = [item.barcode, item.productName, item.masterBarcode].join(' ').toLowerCase();
+      return haystack.includes(query);
+    });
+  }
+  return items;
+}
+
+async function unmapAllLossProducts() {
+  const items = currentLossProductItems();
+  if (!items.length) {
+    showToast('Listede kaldırılacak ürün yok.');
+    return;
+  }
+
+  const mappable = items.filter((item) => item.mappingStatus && !['unmapped', 'legacy'].includes(item.mappingStatus));
+  const barcodes = items.map((item) => item.barcode).filter(Boolean);
+  const confirmText = mappable.length
+    ? `Listedeki ${items.length} ürünün ${mappable.length} tanesinde Uber eşleştirmesi var.\n\nHepsini kaldırmak istediğinize emin misiniz?`
+    : `Listedeki ${items.length} ürün için kayıtlı eşleştirme bulunamayabilir.\n\nYine de eşleştirme araması yapılsın mı?`;
+
+  if (!window.confirm(confirmText)) return;
+
+  lossProductsUnmapAllBtn.disabled = true;
+  lossProductsUnmapAllBtn.textContent = 'Kaldırılıyor…';
+
+  try {
+    const response = await authFetch('/api/product-matching/remove-mappings-bulk', {
+      method: 'POST',
+      body: JSON.stringify({
+        channelId: bootstrap.channelId || 'uber-eats',
+        barcodes
+      })
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Eşleştirmeler kaldırılamadı.');
+
+    showToast(
+      data.removed > 0
+        ? data.removed + ' eşleştirme kaldırıldı.' + (data.notFound ? ' (' + data.notFound + ' üründe eşleştirme yoktu)' : '')
+        : 'Listede kaldırılacak eşleştirme bulunamadı.'
+    );
+    await loadOrders(true);
+    if (activeOrdersView === 'loss-products') {
+      switchOrdersView('loss-products', { syncUrl: false });
+    }
+  } catch (error) {
+    showToast(error.message || 'Eşleştirmeler kaldırılamadı.');
+  } finally {
+    lossProductsUnmapAllBtn.disabled = false;
+    lossProductsUnmapAllBtn.textContent = 'Tüm eşleştirmeleri kaldır';
+  }
+}
+
+function renderLossProducts() {
+  if (!lossProductsBody) return;
+
+  const aggregated = aggregateLossProductsClient(filteredRowsForLossProducts());
+  const items = currentLossProductItems();
+
+  const statCount = document.getElementById('lossProdStatCount');
+  const statNet = document.getElementById('lossProdStatNet');
+  const statMatching = document.getElementById('lossProdStatMatching');
+  const statCost = document.getElementById('lossProdStatCost');
+
+  const totalLineNet = items.reduce((sum, item) => sum + Number(item.totalLineNet || 0), 0);
+  const matchingIssues = items.filter((item) => LOSS_PRODUCT_MATCHING_ISSUES.includes(item.mappingStatus)).length;
+  const costIssues = items.filter((item) => item.costWarnings && item.costWarnings.length).length;
+
+  if (statCount) statCount.textContent = String(items.length);
+  if (statNet) statNet.textContent = formatSignedMoney(totalLineNet);
+  if (statMatching) statMatching.textContent = String(matchingIssues);
+  if (statCost) statCost.textContent = String(costIssues);
+
+  if (!aggregated.length) {
+    lossProductsBody.innerHTML = '<tr><td colspan="10" class="orders-empty">Seçili dönemde zararlı sipariş satırı bulunamadı.</td></tr>';
+    if (lossProductsFooter) {
+      lossProductsFooter.textContent = 'Zararlı sipariş yok — dönemi genişletmeyi veya siparişleri yenilemeyi deneyin.';
+    }
+    return;
+  }
+
+  if (!items.length) {
+    lossProductsBody.innerHTML = '<tr><td colspan="10" class="orders-empty">Filtreye uyan zarar eden ürün yok.</td></tr>';
+    if (lossProductsFooter) {
+      lossProductsFooter.textContent = aggregated.length + ' ürün var; filtreleri gevşetin.';
+    }
+    return;
+  }
+
+  lossProductsBody.innerHTML = items.map((item) => renderLossProductRow(item)).join('');
+  lossProductsBody.querySelectorAll('[data-loss-order]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const orderNumber = btn.dataset.lossOrder;
+      if (!orderNumber) return;
+      pendingOrderNumber = orderNumber;
+      orderDeepLinkHandled = false;
+      switchOrdersView('orders');
+      tryOpenPendingOrder();
+    });
+  });
+
+  if (lossProductsFooter) {
+    lossProductsFooter.textContent =
+      items.length + ' ürün · ' +
+      aggregated.reduce((sum, item) => sum + item.lossOrderCount, 0) + ' zararlı sipariş satırından';
+  }
+}
+
+function renderLossProductRow(item) {
+  const netClass = item.totalLineNet < 0 ? 'amount-neg' : item.totalLineNet > 0 ? 'amount-pos' : 'amount-neutral';
+  const urls = buildLossProductEditUrls(item);
+  const warnings = [];
+  if (LOSS_PRODUCT_MATCHING_ISSUES.includes(item.mappingStatus)) {
+    warnings.push(renderLineMappingBadge({ mappingStatus: item.mappingStatus, masterBarcode: item.masterBarcode, barcode: item.barcode, poolMatchUrl: urls.matching }));
+  }
+  if (item.costWarnings && item.costWarnings.length) {
+    warnings.push('<span class="orders-loss-cost-warn">' + esc(item.costWarnings.join(' · ')) + '</span>');
+  }
+  const warningCell = warnings.length ? warnings.join('<br>') : '<span class="muted">—</span>';
+
+  const orderSample = item.lossOrderNumbers.slice(0, 2).map((orderNumber) =>
+    '<button type="button" class="orders-loss-order-link" data-loss-order="' + esc(orderNumber) + '" title="Sipariş detayını aç">#' + esc(orderNumber) + '</button>'
+  ).join(' ');
+  const orderMore = item.lossOrderCount > 2
+    ? ' <button type="button" class="orders-loss-order-link orders-loss-order-more" data-loss-order="' + esc(item.lossOrderNumbers[2]) + '" title="İlk zarar siparişini aç">+' + (item.lossOrderCount - 2) + '</button>'
+    : '';
+
+  const barcodeCell = urls.matching
+    ? '<a class="orders-barcode-link" href="' + esc(urls.matching) + '">' + esc(item.barcode) + '</a>'
+    : renderBarcodeLink(item.barcode);
+
+  return '<tr class="orders-loss-product-row">' +
+    '<td class="orders-loss-product-cell">' + renderLossProductNameCell(item) + '</td>' +
+    '<td>' + barcodeCell + '</td>' +
+    '<td>' + renderLineMappingBadge({ ...item, poolMatchUrl: urls.matching }) + '</td>' +
+    '<td class="orders-loss-orders-cell">' + orderSample + orderMore + '</td>' +
+    '<td>' + esc(item.quantity) + '</td>' +
+    '<td>₺' + formatMoney(item.totalSales) + '</td>' +
+    '<td>₺' + formatMoney(item.totalCost) + '</td>' +
+    '<td class="' + netClass + '">' + formatSignedMoney(item.totalLineNet) + '</td>' +
+    '<td class="orders-loss-warn-cell">' + warningCell + '</td>' +
+    '<td class="orders-loss-actions">' + renderLossProductActions(item) + '</td>' +
+  '</tr>';
+}
+
+function buildStats(rows) {
+  const kpiRows = rows.filter((row) => {
+    if (row.ingestSource === 'fixture') return false;
+    if (row.profitConfidence === 'missing_cost' || row.profitConfidence === 'invalid_data') return false;
+    return true;
+  });
+
+  let totalSales = 0;
+  let totalProfit = 0;
+  let profitable = 0;
+  let loss = 0;
+
+  for (const row of kpiRows) {
+    totalSales += Number(row.salesAmount || 0);
+    totalProfit += Number(row.netProfit || 0);
+    if (row.netProfit > 0) profitable += 1;
+    else if (row.netProfit < 0) loss += 1;
+  }
+
+  const count = rows.length;
+  return {
+    count,
+    kpiCount: kpiRows.length,
+    totalSales,
+    totalProfit,
+    avgProfit: kpiRows.length ? totalProfit / kpiRows.length : 0,
+    profitable,
+    loss
+  };
+}
+
+function renderSummary(rows, dataQuality, meta) {
+  const stats = buildStats(rows);
+  document.getElementById('statCount').textContent = String(stats.count);
+  document.getElementById('statSales').textContent = '₺' + formatMoney(stats.totalSales);
+  document.getElementById('statProfit').textContent = formatSignedMoney(stats.totalProfit);
+  document.getElementById('statProfit').className = stats.totalProfit >= 0 ? 'amount-pos' : 'amount-neg';
+  document.getElementById('statAvgProfit').textContent = formatSignedMoney(stats.avgProfit);
+  document.getElementById('statProfitable').textContent = String(stats.profitable);
+  document.getElementById('statLoss').textContent = String(stats.loss);
+
+  const sourceNote = meta?.orderSources?.label;
+  const footerEl = document.getElementById('ordersSourceNote');
+  if (footerEl) {
+    footerEl.textContent = sourceNote || '';
+    footerEl.hidden = !sourceNote;
+  }
+
+  const warningsEl = document.getElementById('statWarnings');
+  if (warningsEl) {
+    const warnCount = dataQuality?.withWarnings ?? rows.filter((r) => r.dataWarnings?.length).length;
+    warningsEl.textContent = String(warnCount);
+    warningsEl.closest('.ops-summary-item')?.classList.toggle('ops-summary-item--warn', warnCount > 0);
+  }
+}
+
+function renderQualityBanner(dataQuality) {
+  if (!qualityBannerEl) return;
+
+  const count = Number(dataQuality?.withWarnings || 0);
+  if (!count) {
+    qualityBannerEl.hidden = true;
+    qualityBannerEl.innerHTML = '';
+    return;
+  }
+
+  const topIssues = Object.entries(dataQuality.byType || {})
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([label, n]) => esc(label) + ' (' + n + ')')
+    .join(' · ');
+
+  qualityBannerEl.hidden = false;
+  qualityBannerEl.innerHTML =
+    '<strong>' + count + ' siparişte veri uyarısı</strong>' +
+    '<span>Kâr hesabı eksik maliyet veya komisyon nedeniyle güvenilir olmayabilir.</span>' +
+    (topIssues ? '<span class="orders-quality-detail">' + topIssues + '</span>' : '') +
+    '<a href="' + esc(isChannelPage ? '/products/costs?emptyCostOnly=1' : '/marketplace/products?emptyCostOnly=1') + '">Eksik maliyetleri düzelt</a>';
+}
+
+function matchingPoolUrl() {
+  const channelId = bootstrap.channelId || 'trendyol-marketplace';
+  return '/products?tab=' + encodeURIComponent(channelId);
+}
+
+function renderMatchingSummary(summary) {
+  if (!matchingEnabled()) {
+    if (matchingStripEl) matchingStripEl.hidden = true;
+    if (matchingBannerEl) {
+      matchingBannerEl.hidden = true;
+      matchingBannerEl.innerHTML = '';
+    }
+    return;
+  }
+
+  const s = summary || {
+    totalLines: 0,
+    mappedLines: 0,
+    unmappedLines: 0,
+    fallbackLines: 0,
+    legacyLines: 0
+  };
+
+  if (matchingStripEl) {
+    matchingStripEl.hidden = false;
+    const totalEl = document.getElementById('matchStatTotal');
+    const mappedEl = document.getElementById('matchStatMapped');
+    const unmappedEl = document.getElementById('matchStatUnmapped');
+    const fallbackEl = document.getElementById('matchStatFallback');
+    if (totalEl) totalEl.textContent = String(s.totalLines);
+    if (mappedEl) mappedEl.textContent = String(s.mappedLines);
+    if (unmappedEl) {
+      unmappedEl.textContent = String(s.unmappedLines);
+      unmappedEl.closest('.ops-summary-item')?.classList.toggle('ops-summary-item--warn', s.unmappedLines > 0);
+    }
+    if (fallbackEl) fallbackEl.textContent = String(s.fallbackLines + s.legacyLines);
+  }
+
+  if (!matchingBannerEl) return;
+
+  if (!s.unmappedLines) {
+    matchingBannerEl.hidden = true;
+    matchingBannerEl.innerHTML = '';
+    return;
+  }
+
+  const pct = s.totalLines ? Math.round((s.unmappedLines / s.totalLines) * 100) : 0;
+  matchingBannerEl.hidden = false;
+  matchingBannerEl.innerHTML =
+    '<strong>' + s.unmappedLines + ' sipariş satırı eşleşmemiş</strong>' +
+    '<span>Dönemdeki satırların yaklaşık %' + pct + ' kadarı onaylı eşleştirme bulamadı; kâr hesabı legacy maliyet veya sıfır maliyet kullanıyor olabilir.</span>' +
+    '<a href="' + esc(matchingPoolUrl()) + '">Ürün Havuzu\'nda eşleştir</a>' +
+    ' · <button type="button" class="orders-matching-filter-btn" id="ordersMatchingFilterBtn">Eşleşmemiş siparişleri göster</button>';
+  document.getElementById('ordersMatchingFilterBtn')?.addEventListener('click', () => {
+    if (!matchingFilter) return;
+    matchingFilter.value = 'unmapped';
+    syncMatchingQueryParam();
+    syncMatchingQuickButtons();
+    refreshView();
+  });
+}
+
+function buildTimelineFromRows(rows, mode) {
+  const buckets = new Map();
+
+  for (const row of rows) {
+    const key = mode === 'week' ? orderWeekKey(row.orderDateMs) : orderDayKey(row.orderDateMs);
+    if (!key) continue;
+    if (!buckets.has(key)) {
+      buckets.set(key, { key, label: formatBucketLabel(key, mode), salesAmount: 0, netProfit: 0, count: 0 });
+    }
+    const bucket = buckets.get(key);
+    bucket.salesAmount += Number(row.salesAmount || 0);
+    bucket.netProfit += Number(row.netProfit || 0);
+    bucket.count += 1;
+  }
+
+  return Array.from(buckets.values()).sort((a, b) => a.key.localeCompare(b.key));
+}
+
+function renderChart(rows) {
+  if (!chartWrap) return;
+
+  const data = buildTimelineFromRows(rows || filteredRows(), chartMode);
+  if (!data.length) {
+    chartWrap.innerHTML = '<p class="orders-chart-empty">Seçili filtreler için grafik verisi yok.</p>';
+    return;
+  }
+
+  const width = Math.max(560, data.length * 48);
+  const height = 220;
+  const padX = 36;
+  const padTop = 16;
+  const padBottom = 36;
+  const chartHeight = height - padTop - padBottom;
+  const maxProfit = Math.max(...data.map((d) => Math.abs(d.netProfit)), 1);
+  const maxSales = Math.max(...data.map((d) => d.salesAmount), 1);
+  const barWidth = Math.min(28, (width - padX * 2) / data.length - 8);
+  const gap = (width - padX * 2 - barWidth * data.length) / Math.max(data.length - 1, 1);
+
+  let bars = '';
+  data.forEach((point, index) => {
+    const x = padX + index * (barWidth + gap);
+    const salesH = (point.salesAmount / maxSales) * (chartHeight * 0.35);
+    const profitAbs = Math.abs(point.netProfit);
+    const profitH = (profitAbs / maxProfit) * (chartHeight * 0.55);
+    const profitY = padTop + chartHeight * 0.35 - profitH;
+    const salesY = padTop + chartHeight - salesH;
+    const profitClass = point.netProfit >= 0 ? 'bar-profit' : 'bar-loss';
+
+    bars +=
+      '<rect class="bar-sales" x="' + x + '" y="' + salesY + '" width="' + barWidth + '" height="' + salesH + '" rx="3">' +
+        '<title>' + esc(point.label) + ' — Ciro: ₺' + formatMoney(point.salesAmount) + '</title>' +
+      '</rect>' +
+      '<rect class="' + profitClass + '" x="' + x + '" y="' + profitY + '" width="' + barWidth + '" height="' + profitH + '" rx="3">' +
+        '<title>' + esc(point.label) + ' — Kâr: ' + formatSignedMoney(point.netProfit) + ' (' + point.count + ' sipariş)</title>' +
+      '</rect>' +
+      '<text class="axis-label" x="' + (x + barWidth / 2) + '" y="' + (height - 8) + '" text-anchor="middle">' + esc(point.label) + '</text>';
+  });
+
+  chartWrap.innerHTML =
+    '<div class="orders-chart">' +
+      '<div class="orders-chart-legend">' +
+        '<span class="legend-sales">Ciro</span>' +
+        '<span class="legend-profit">Kâr</span>' +
+        '<span class="legend-loss">Zarar</span>' +
+      '</div>' +
+      '<svg viewBox="0 0 ' + width + ' ' + height + '" role="img" aria-label="Sipariş kâr grafiği">' +
+        '<line class="axis-line" x1="' + padX + '" y1="' + (padTop + chartHeight * 0.35) + '" x2="' + (width - padX) + '" y2="' + (padTop + chartHeight * 0.35) + '"></line>' +
+        bars +
+      '</svg>' +
+    '</div>';
+}
+
+function sortedRows(rows) {
+  const sorted = rows.slice();
+  sorted.sort((a, b) => {
+    const av = a[sortKey];
+    const bv = b[sortKey];
+    if (typeof av === 'number' && typeof bv === 'number') {
+      return sortDir === 'asc' ? av - bv : bv - av;
+    }
+    return sortDir === 'asc'
+      ? String(av).localeCompare(String(bv), 'tr-TR')
+      : String(bv).localeCompare(String(av), 'tr-TR');
+  });
+  return sorted;
+}
+
+function renderTable() {
+  const rows = sortedRows(filteredRows());
+
+  document.querySelectorAll('.orders-table th[data-sort]').forEach((th) => {
+    th.classList.toggle('sorted', th.dataset.sort === sortKey);
+    const icon = th.querySelector('.sort-icon');
+    if (icon) icon.textContent = th.dataset.sort === sortKey ? (sortDir === 'asc' ? '▲' : '▼') : '↕';
+  });
+
+  if (!rows.length) {
+    tableBody.innerHTML = '<tr><td colspan="' + COL_COUNT + '" class="orders-loading">Kayıt bulunamadı.</td></tr>';
+    return;
+  }
+
+  tableBody.innerHTML = rows.map((row, index) => renderRow(row, index)).join('');
+  tableBody.querySelectorAll('[data-detail]').forEach((btn) => {
+    btn.addEventListener('click', () => openDetail(Number(btn.dataset.detail)));
+  });
+}
+
+function renderRow(row, index) {
+  const profitClass = row.netProfit > 0 ? 'amount-pos' : row.netProfit < 0 ? 'amount-neg' : 'amount-neutral';
+  const rowClasses = [];
+  if (row.netProfit < 0) rowClasses.push('row-loss');
+  if (row.dataWarnings?.length) rowClasses.push('row-warn');
+  if (matchingEnabled() && orderMatchesMatchingFilter(row, 'needs_review')) rowClasses.push('row-match-warn');
+  const warnBadge = row.dataWarnings?.length
+    ? '<span class="orders-warn-dot" title="' + escAttr(row.dataWarnings.join(' · ')) + '">!</span> '
+    : '';
+  const sourceBadge = row.ingestSource
+    ? '<span class="orders-source-pill" title="Kaynak">' + esc(row.ingestSource) + '</span> '
+    : '';
+  const confidenceBadge = row.profitConfidence && row.profitConfidence !== 'complete'
+    ? '<span class="orders-confidence-pill" title="Kâr güveni">' + esc(row.profitConfidence) + '</span> '
+    : '';
+  const matchBadge = matchingEnabled() && orderMatchesMatchingFilter(row, 'unmapped')
+    ? '<span class="orders-match-dot" title="Eşleşmemiş ürün satırı">◎</span> '
+    : '';
+
+  return '<tr' + (rowClasses.length ? ' class="' + rowClasses.join(' ') + '"' : '') + '>' +
+    '<td>' + warnBadge + matchBadge + sourceBadge + confidenceBadge + esc(row.orderNumber) + '</td>' +
+    '<td>' + esc(formatOrderDate(row.orderDateMs)) + '</td>' +
+    '<td><span class="orders-status-pill">' + esc(translateStatus(row.status) || '—') + '</span></td>' +
+    '<td class="amount-neutral">₺' + formatMoney(row.salesAmount) + '</td>' +
+    '<td class="' + profitClass + '">' + formatSignedMoney(row.netProfit) + '</td>' +
+    '<td class="' + profitClass + '">' + formatPercent(row.profitRate) + '</td>' +
+    '<td class="' + profitClass + '">' + formatPercent(row.profitMargin) + '</td>' +
+    '<td><button type="button" class="btn-detail" data-detail="' + index + '">Detay</button></td>' +
+  '</tr>';
+}
+
+function openDetail(index) {
+  const rows = sortedRows(filteredRows());
+  const row = rows[index];
+  if (!row) return;
+
+  modalTitle.textContent = 'Sipariş #' + row.orderNumber;
+  syncOrderQueryParam(row.orderNumber);
+  const matchingNotes = row.matchingWarnings && row.matchingWarnings.length
+    ? row.matchingWarnings
+    : [];
+  const allWarnings = [...new Set([...(row.dataWarnings || []), ...matchingNotes])];
+  modalBody.innerHTML =
+    (allWarnings.length
+      ? '<p class="orders-warn-box">' + esc(allWarnings.join(' · ')) + '</p>'
+      : '') +
+    '<div class="detail-grid">' +
+      detailItem('Sipariş tarihi', formatOrderDate(row.orderDateMs)) +
+      detailItem('Durum', translateStatus(row.status) || '—') +
+      detailItem('Kaynak', row.ingestSource || '—') +
+      detailItem('Kâr güveni', row.profitConfidence || '—') +
+      detailItem('Sipariş tutarı', '₺' + formatMoney(row.salesAmount)) +
+      detailItem('Ürün maliyeti', '₺' + formatMoney(row.productCost)) +
+      detailItem('Ek maliyet', '₺' + formatMoney(row.extraCost)) +
+      detailItem('Komisyon', '₺' + formatMoney(row.commissionAmount)) +
+      detailItem('Kargo', formatShippingCostLabel(row)) +
+      detailItem('Hizmet bedeli', '₺' + formatMoney(row.serviceFee)) +
+      detailItem('Stopaj', '₺' + formatMoney(row.stopajAmount)) +
+      detailItem('Satış KDV', '₺' + formatMoney(row.salesVat)) +
+      detailItem('Alış KDV', '₺' + formatMoney(row.purchaseVat)) +
+      detailItem('Komisyon KDV', '₺' + formatMoney(row.commissionVat)) +
+      detailItem('Kargo KDV', '₺' + formatMoney(row.shippingVat)) +
+      detailItem('Hizmet KDV', '₺' + formatMoney(row.serviceFeeVat)) +
+      detailItem('Net ödenecek KDV', '₺' + formatMoney(row.payableVat)) +
+      (row.carriedForwardVat > 0 ? detailItem('Devreden KDV', '₺' + formatMoney(row.carriedForwardVat)) : '') +
+      detailItem('Net kâr', formatSignedMoney(row.netProfit)) +
+      detailItem('Kâr oranı', formatPercent(row.profitRate)) +
+      detailItem('Kâr marjı', formatPercent(row.profitMargin)) +
+    '</div>' +
+    renderMatchingActions(row) +
+    renderLineItems(row.lines) +
+    (bootstrap.benimposSaleEnabled
+      ? '<div class="detail-actions"><button type="button" class="btn-green" id="benimposPreviewBtn">BenimPOS\'a Gönder</button>' +
+        '<span class="muted detail-actions-note">Önce eşleştirme ön izlemesi — yalnızca manuel onaylı eşleştirmeler satışa gider.</span></div>'
+      : '');
+
+  modalBackdrop.classList.add('open');
+
+  if (bootstrap.benimposSaleEnabled) {
+    document.getElementById('benimposPreviewBtn')?.addEventListener('click', () => {
+      window.BuyBoxBenimposSale?.openPreview(row, activeDays);
+    });
+  }
+}
+
+function matchingEnabled() {
+  return String(bootstrap.productMatchingMode || 'legacy') !== 'legacy';
+}
+
+function buildPoolMatchUrl(line) {
+  if (line.poolMatchUrl) return line.poolMatchUrl;
+  if (!matchingEnabled() || !bootstrap.channelId) return '';
+  const barcode = String(line.barcode || '').trim();
+  if (!barcode) return '';
+  return buildPoolMatchUrlForStatus(barcode, line.mappingStatus || 'legacy', bootstrap.channelId);
+}
+
+function buildPoolMatchUrlForStatus(barcode, mappingStatus, channelId = bootstrap.channelId) {
+  const code = String(barcode || '').trim();
+  const channel = String(channelId || bootstrap.channelId || 'uber-eats').trim();
+  if (!code) return '';
+
+  if (mappingStatus === 'missing_master') {
+    return (bootstrap.matchingPath || '/products') + '?tab=workbench&queueMode=missing_master&q=' + encodeURIComponent(code);
+  }
+  if (mappingStatus === 'barcode_conflict') {
+    return (bootstrap.matchingPath || '/products') + '?tab=conflicts';
+  }
+
+  const params = new URLSearchParams();
+  params.set('tab', channel);
+  params.set('q', code);
+  params.set('openMap', '1');
+  if (mappingStatus && mappingStatus !== 'legacy') params.set('status', mappingStatus);
+  return (bootstrap.matchingPath || '/products') + '?' + params.toString();
+}
+
+function buildMasterPoolUrl(barcode) {
+  const code = String(barcode || '').trim();
+  if (!code) return '';
+  return (bootstrap.matchingPath || '/products') + '?tab=master&q=' + encodeURIComponent(code);
+}
+
+function buildUberCatalogUrl(barcode, options = {}) {
+  const code = String(barcode || '').trim();
+  if (!code) return '';
+  const params = new URLSearchParams();
+  params.set('tab', 'uber-eats');
+  params.set('q', code);
+  if (options.openMap) params.set('openMap', '1');
+  if (options.status) params.set('status', options.status);
+  return (bootstrap.matchingPath || '/products') + '?' + params.toString();
+}
+
+function buildLossProductEditUrls(item) {
+  const channelBarcode = String(item.barcode || '').trim();
+  const masterBarcode = String(item.masterBarcode || '').trim();
+  const costBarcode = masterBarcode || channelBarcode;
+  const status = item.mappingStatus || 'legacy';
+
+  return {
+    matching: item.poolMatchUrl || buildPoolMatchUrlForStatus(channelBarcode, status, 'uber-eats'),
+    uberCatalog: buildUberCatalogUrl(channelBarcode),
+    masterPool: buildMasterPoolUrl(masterBarcode || channelBarcode),
+    channelCost: productsUrlForBarcode(costBarcode)
+  };
+}
+
+function renderLossProductActions(item) {
+  const urls = buildLossProductEditUrls(item);
+  const parts = [];
+
+  if (urls.matching) {
+    parts.push('<a class="orders-loss-action-btn orders-loss-action-btn--primary" href="' + esc(urls.matching) + '">Uber eşleştir</a>');
+  }
+  if (urls.masterPool) {
+    parts.push('<a class="orders-loss-action-btn" href="' + esc(urls.masterPool) + '">Ana havuz</a>');
+  }
+  if (urls.channelCost) {
+    parts.push('<a class="orders-loss-action-btn" href="' + esc(urls.channelCost) + '">Maliyet</a>');
+  }
+  if (urls.uberCatalog && urls.uberCatalog !== urls.matching) {
+    parts.push('<a class="orders-loss-action-btn orders-loss-action-btn--ghost" href="' + esc(urls.uberCatalog) + '">Uber katalog</a>');
+  }
+
+  return parts.length
+    ? '<div class="orders-loss-action-stack">' + parts.join('') + '</div>'
+    : '<span class="muted">—</span>';
+}
+
+function renderLossProductNameCell(item) {
+  const urls = buildLossProductEditUrls(item);
+  const title = esc(item.productName || item.barcode);
+  const masterMeta = item.masterBarcode && item.masterBarcode !== item.barcode
+    ? '<div class="orders-loss-master-meta"><span class="muted">BenimPOS:</span> ' +
+      '<a class="orders-barcode-link" href="' + esc(urls.masterPool) + '">' + esc(item.masterBarcode) + '</a></div>'
+    : '';
+  const nameLink = urls.matching
+    ? '<a class="orders-loss-product-link" href="' + esc(urls.matching) + '">' + title + '</a>'
+    : title;
+  return nameLink + masterMeta;
+}
+
+function renderMatchingActions(row) {
+  if (!matchingEnabled() || !bootstrap.channelId) return '';
+  const lines = row.lines || [];
+  if (!lines.length) return '';
+
+  const chips = [];
+  const seen = new Set();
+  for (const line of lines) {
+    const url = buildPoolMatchUrl(line);
+    const barcode = String(line.barcode || '').trim();
+    if (!url || !barcode || seen.has(barcode)) continue;
+    seen.add(barcode);
+    const label = line.productName || barcode;
+    const warn = line.costWarnings && line.costWarnings.length;
+    chips.push(
+      '<a class="orders-match-chip' + (warn ? ' orders-match-chip--warn' : '') + '" href="' + esc(url) + '">' +
+        esc(label.length > 48 ? label.slice(0, 45) + '…' : label) +
+        ' <span class="orders-match-chip-cta">Eşleştir →</span>' +
+      '</a>'
+    );
+  }
+
+  if (!chips.length) return '';
+
+  return '<div class="orders-detail-match-actions">' +
+    '<h4>Ürün eşleştirme</h4>' +
+    '<p class="muted orders-detail-hint">Satırdaki ürünlerden Ana Ürün Havuzu\'nda eşleştirmeyi düzenleyin.</p>' +
+    '<div class="orders-match-chips">' + chips.join('') + '</div>' +
+  '</div>';
+}
+
+function productsUrlForBarcode(barcode) {
+  const code = String(barcode || '').trim();
+  if (!code) return bootstrap.productsPath || '/marketplace/products';
+  return (bootstrap.productsPath || '/marketplace/products') + '?barcode=' + encodeURIComponent(code);
+}
+
+function renderBarcodeLink(barcode) {
+  const code = String(barcode || '').trim();
+  if (!code) return '—';
+  return '<a class="orders-barcode-link" href="' + esc(productsUrlForBarcode(code)) + '">' + esc(code) + '</a>';
+}
+
+function renderLineCostMeta(line) {
+  const parts = [];
+  if (line.costSourceLabel) {
+    parts.push('<div class="orders-cost-meta"><span class="muted">Maliyet kaynağı:</span> ' + esc(line.costSourceLabel) + '</div>');
+  }
+  if (line.costBarcode && line.costBarcode !== line.barcode) {
+    parts.push('<div class="orders-cost-meta"><span class="muted">Maliyet barkodu:</span> ' + renderBarcodeLink(line.costBarcode) + '</div>');
+  }
+  if (line.costProductName && line.costProductName !== line.productName) {
+    parts.push('<div class="orders-cost-meta"><span class="muted">Maliyet ürünü:</span> ' + esc(line.costProductName) + '</div>');
+  }
+  if (line.costWarnings && line.costWarnings.length) {
+    parts.push('<div class="orders-cost-warn">' + esc(line.costWarnings.join(' · ')) + '</div>');
+  }
+  return parts.join('');
+}
+
+function renderLineItems(lines) {
+  if (!lines || !lines.length) {
+    return '<p class="muted">Satır detayı yok.</p>';
+  }
+
+  const showMapping = matchingEnabled() && Boolean(bootstrap.channelId);
+  const showCostMeta = true;
+  const head = showMapping
+    ? '<th>Ürün</th><th>Barkod</th><th>Adet</th><th>Satış</th><th>Maliyet</th><th>Komisyon</th><th>Maliyet kaynağı</th><th>Eşleşme</th>'
+    : '<th>Ürün</th><th>Barkod</th><th>Adet</th><th>Satış</th><th>Maliyet</th><th>Komisyon</th><th>Maliyet kaynağı</th>';
+
+  const rows = lines.map((line) => {
+    const mappingCell = showMapping
+      ? '<td>' + renderLineMappingBadge(line) + '</td>'
+      : '';
+    const costMetaCell = showCostMeta
+      ? '<td class="orders-cost-cell">' + renderLineCostMeta(line) + '</td>'
+      : '';
+    const rowClass = line.costWarnings && line.costWarnings.length ? ' class="orders-line-warn"' : '';
+    return '<tr' + rowClass + '>' +
+      '<td>' + esc(line.productName || line.barcode) + '</td>' +
+      '<td>' + renderBarcodeLink(line.barcode) + '</td>' +
+      '<td>' + esc(line.quantity) + '</td>' +
+      '<td>₺' + formatMoney(line.lineSalesAmount) + '</td>' +
+      '<td>₺' + formatMoney(line.totalProductCost) + '</td>' +
+      '<td>₺' + formatMoney(line.commissionAmount) + '</td>' +
+      costMetaCell +
+      mappingCell +
+    '</tr>';
+  }).join('');
+
+  return '<div class="detail-lines">' +
+    '<h4>Ürün satırları</h4>' +
+    '<p class="muted orders-detail-hint">Barkoda tıklayarak <strong>Ürün Ayarları</strong>nda maliyet kaydını açabilirsiniz.' +
+      (showMapping ? ' Eşleşme sütunundan <strong>Ürün Havuzu</strong>na gidebilirsiniz.' : '') +
+    '</p>' +
+    '<table><thead><tr>' + head + '</tr></thead>' +
+    '<tbody>' + rows + '</tbody></table></div>';
+}
+
+function renderLineMappingBadge(line) {
+  const status = line.mappingStatus || 'legacy';
+  const labels = {
+    auto_matched: 'Otomatik',
+    manual_confirmed: 'Onaylı',
+    missing_master: 'BenimPOS yok',
+    pending: 'Bekliyor',
+    review_required: 'Kontrol',
+    barcode_conflict: 'Çakışma',
+    legacy_fallback: 'Fallback',
+    unmapped: 'Eşleşmedi',
+    legacy: 'Legacy'
+  };
+  const warnStatuses = ['missing_master', 'barcode_conflict', 'review_required', 'pending', 'unmapped', 'auto_matched'];
+  const cls = ['missing_master', 'barcode_conflict', 'review_required', 'pending', 'unmapped'].includes(status)
+    ? 'orders-map-badge orders-map-badge--warn'
+    : (status === 'auto_matched' || status === 'manual_confirmed' ? 'orders-map-badge orders-map-badge--ok' : 'orders-map-badge');
+  let html = '<span class="' + cls + '">' + esc(labels[status] || status) + '</span>';
+  if (line.masterBarcode && line.masterBarcode !== line.barcode) {
+    html += '<div class="orders-map-meta">→ ' + esc(line.masterBarcode) + '</div>';
+  }
+  const poolUrl = buildPoolMatchUrl(line);
+  if (poolUrl) {
+    html += '<div class="orders-map-actions">' +
+      '<a href="' + esc(poolUrl) + '" class="orders-map-link">Eşleştirmeyi düzenle</a>' +
+      '</div>';
+  }
+  return html;
+}
+
+function detailItem(label, value) {
+  return '<div><span>' + esc(label) + '</span><strong>' + esc(String(value)) + '</strong></div>';
+}
+
+function closeModal() {
+  modalBackdrop.classList.remove('open');
+  syncOrderQueryParam('');
+}
+
+async function exportReport() {
+  const params = buildQueryParams();
+  if (statusFilter.value) params.set('status', statusFilter.value);
+  if (profitFilter.value !== 'all') params.set('profit', profitFilter.value);
+
+  const response = await authFetch(ORDERS_EXPORT_API + '?' + params.toString());
+  if (!response.ok) {
+    showToast('Rapor indirilemedi.');
+    return;
+  }
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = (bootstrap.channelId || 'siparis') + '-karlilik.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('Rapor indirildi.');
+}
+
+function setZoom(scale) {
+  tableScale = Math.min(1.1, Math.max(0.7, scale));
+  if (tableWrap) tableWrap.style.fontSize = (tableScale * 100) + '%';
+  const zoomLabel = document.getElementById('zoomLabel');
+  if (zoomLabel) zoomLabel.textContent = Math.round(tableScale * 100) + '%';
+}
+
+function toInputDate(date) {
+  return date.getFullYear() + '-' + pad(date.getMonth() + 1) + '-' + pad(date.getDate());
+}
+
+function pad(n) {
+  return String(n).padStart(2, '0');
+}
+
+function formatShippingCostLabel(row) {
+  const amount = '₺' + formatMoney(row.shippingCost);
+  if (row.shippingCostSource === 'dhl') {
+    const tag = row.shippingCostEstimated ? 'DHL tahmini' : 'DHL gerçek';
+    const parts = [amount, '<span class="muted">(' + esc(tag) + ')</span>'];
+    if (toNumber(row.returnShippingCost) > 0) {
+      parts.push('<span class="muted">iade ₺' + formatMoney(row.returnShippingCost) + '</span>');
+    }
+    return parts.join(' ');
+  }
+  if (row.shippingCostEstimated && row.shippingCostSource === 'desi') {
+    return amount + ' <span class="muted">(desi tahmini)</span>';
+  }
+  return amount;
+}
+
+function toNumber(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function formatMoney(value) {
+  return Number(value || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function formatSignedMoney(value) {
+  const n = Number(value || 0);
+  const prefix = n < 0 ? '-₺' : '₺';
+  return prefix + formatMoney(Math.abs(n));
+}
+
+function formatPercent(value) {
+  const n = Number(value || 0);
+  return (n >= 0 ? '' : '-') + Math.abs(n).toLocaleString('tr-TR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%';
+}
+
+function showToast(msg) {
+  toastEl.textContent = msg;
+  toastEl.classList.add('show');
+  clearTimeout(showToast._t);
+  showToast._t = setTimeout(() => toastEl.classList.remove('show'), 2600);
+}
+
+function getStoredToken() {
+  return window.BuyBoxCommon.getStoredToken();
+}
+
+function redirectToLogin() {
+  window.BuyBoxCommon.redirectToLogin();
+}
+
+function logout() {
+  window.BuyBoxCommon.logout();
+}
+
+async function authFetch(url, options = {}) {
+  return window.BuyBoxCommon.authFetch(url, options);
+}
+
+function esc(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function escAttr(value) {
+  return esc(value).replace(/'/g, '&#39;');
+}
+
+async function loadEmailSettings() {
+  const statusEl = document.getElementById('emailStatus');
+  const smtpNoteEl = document.getElementById('emailSmtpNote');
+  try {
+    const response = await authFetch('/api/email-settings');
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Ayarlar yüklenemedi');
+
+    const s = data.settings || {};
+    document.getElementById('emailEnabled').checked = Boolean(s.enabled);
+    document.getElementById('emailTo').value = s.to || 'petfixltd@gmail.com';
+    document.getElementById('emailInterval').value = s.checkIntervalMinutes || 5;
+    document.getElementById('emailLookback').value = s.lookbackHours || 6;
+
+    const smtpParts = [];
+    if (data.smtpConfigured) {
+      smtpParts.push('SMTP hazır');
+      if (data.smtpFrom) smtpParts.push('Gönderen: ' + data.smtpFrom);
+    } else {
+      smtpParts.push('SMTP eksik — buybox-platform/.env dosyasına Gmail uygulama şifresi ekleyin');
+    }
+    smtpNoteEl.textContent = smtpParts.join(' · ');
+
+    const alerts = data.alerts || {};
+    statusEl.textContent = buildEmailStatusText(s, alerts);
+  } catch (error) {
+    statusEl.textContent = 'E-posta ayarları yüklenemedi: ' + error.message;
+  }
+}
+
+function buildEmailStatusText(settings, alerts) {
+  const parts = [];
+  parts.push(settings.enabled ? 'Bildirim açık' : 'Bildirim kapalı');
+  if (alerts.lastCheckAt) parts.push('Son kontrol: ' + formatLocalTime(alerts.lastCheckAt));
+  if (alerts.sentCount) parts.push('Gönderilen: ' + alerts.sentCount);
+  if (alerts.lastError) parts.push('Son hata: ' + alerts.lastError);
+  return parts.join(' · ');
+}
+
+function formatLocalTime(iso) {
+  try {
+    return new Date(iso).toLocaleString('tr-TR', { timeZone: 'Europe/Istanbul' });
+  } catch {
+    return iso;
+  }
+}
+
+function emailPayloadFromForm() {
+  return {
+    enabled: document.getElementById('emailEnabled').checked,
+    to: document.getElementById('emailTo').value.trim(),
+    checkIntervalMinutes: document.getElementById('emailInterval').value,
+    lookbackHours: document.getElementById('emailLookback').value
+  };
+}
+
+async function saveEmailSettings() {
+  try {
+    const response = await authFetch('/api/email-settings', {
+      method: 'POST',
+      body: JSON.stringify(emailPayloadFromForm())
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Kaydedilemedi');
+    document.getElementById('emailStatus').textContent = buildEmailStatusText(data.settings || {}, data.alerts || {});
+    showToast('E-posta ayarları kaydedildi.');
+    loadEmailSettings();
+  } catch (error) {
+    showToast(error.message);
+  }
+}
+
+async function testEmail() {
+  try {
+    await saveEmailSettings();
+    const response = await authFetch('/api/email-test', { method: 'POST', body: '{}' });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Test başarısız');
+    showToast(data.message || 'Test e-postası gönderildi.');
+    loadEmailSettings();
+  } catch (error) {
+    showToast(error.message);
+  }
+}
+
+async function checkEmailNow() {
+  try {
+    const response = await authFetch('/api/email-check-now', { method: 'POST', body: '{}' });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Kontrol başarısız');
+    const count = (data.notified || []).length;
+    showToast(count ? count + ' yeni zarar bildirimi gönderildi.' : 'Yeni zarar siparişi yok.');
+    loadEmailSettings();
+  } catch (error) {
+    showToast(error.message);
+  }
+}
+})();

@@ -1,0 +1,21 @@
+services:
+  ops-postgres:
+    image: postgres:16-alpine
+    container_name: petfix-ops-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: petfix
+      POSTGRES_PASSWORD: petfix
+      POSTGRES_DB: petfix_ops
+    ports:
+      - "5433:5432"
+    volumes:
+      - petfix_ops_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U petfix -d petfix_ops"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  petfix_ops_pg_data:

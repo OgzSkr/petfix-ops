@@ -1,0 +1,67 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: petfix-prod-postgres
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-petfix}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}
+      POSTGRES_DB: ${POSTGRES_DB:-petfix_ops}
+    volumes:
+      - petfix_prod_pg_data:/var/lib/postgresql/data
+    networks:
+      - petfix_prod
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-petfix} -d ${POSTGRES_DB:-petfix_ops}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '5'
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.prod
+    container_name: petfix-prod-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env.production
+    environment:
+      NODE_ENV: production
+      PETFIX_ENV_FILE: .env.production
+      HOST: 0.0.0.0
+      PORT: 8787
+      OPS_POSTGRES_URL: postgresql://${POSTGRES_USER:-petfix}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-petfix_ops}
+    ports:
+      - '127.0.0.1:8787:8787'
+    networks:
+      - petfix_prod
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:8787/health || exit 1']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '5'
+
+networks:
+  petfix_prod:
+    name: petfix_prod
+
+volumes:
+  petfix_prod_pg_data:
+    name: petfix_prod_pg_data

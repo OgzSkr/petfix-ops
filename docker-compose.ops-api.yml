@@ -1,0 +1,48 @@
+services:
+  ops-postgres:
+    image: postgres:16-alpine
+    container_name: petfix-ops-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: petfix
+      POSTGRES_PASSWORD: petfix
+      POSTGRES_DB: petfix_ops
+    ports:
+      - '5433:5432'
+    volumes:
+      - petfix_ops_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U petfix -d petfix_ops']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  ops-api:
+    build:
+      context: .
+      dockerfile: Dockerfile.ops
+    container_name: petfix-ops-api
+    restart: unless-stopped
+    depends_on:
+      ops-postgres:
+        condition: service_healthy
+    ports:
+      - '8787:8787'
+    env_file:
+      - .env
+    volumes:
+      - ./.env:/app/.env
+      - ./data:/app/data
+    environment:
+      NODE_ENV: development
+      OPS_POSTGRES_URL: postgresql://petfix:petfix@petfix-ops-postgres:5432/petfix_ops
+      HOST: 0.0.0.0
+      PORT: 8787
+
+networks:
+  default:
+    name: petfix-ops_default
+    external: true
+
+volumes:
+  petfix_ops_pg_data:

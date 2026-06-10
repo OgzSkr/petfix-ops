@@ -1,0 +1,49 @@
+:root {
+  color-scheme: light;
+
+  --ops-brand-primary: #5c4033;
+  --ops-brand-accent: #e8a598;
+  --ops-brand-accent-strong: #d4897a;
+
+  --ops-bg-app: #f3f4f6;
+  --ops-bg-surface: #ffffff;
+  --ops-bg-nav: #1e293b;
+  --ops-bg-nav-hover: rgba(255, 255, 255, 0.08);
+  --ops-border: #e2e8f0;
+  --ops-border-strong: #cbd5e1;
+
+  --ops-text-primary: #0f172a;
+  --ops-text-secondary: #64748b;
+  --ops-text-inverse: #f8fafc;
+
+  --ops-status-ok: #2d8a4e;
+  --ops-status-warn: #d97706;
+  --ops-status-danger: #dc2626;
+  --ops-status-info: #2563eb;
+
+  --ops-mode-shadow-bg: #ede9fe;
+  --ops-mode-shadow-border: #7c3aed;
+  --ops-mode-shadow-text: #5b21b6;
+  --ops-mode-live-bg: #ecfdf5;
+  --ops-mode-live-border: #059669;
+  --ops-mode-live-text: #065f46;
+
+  --ops-sla-normal: transparent;
+  --ops-sla-warn-bg: #fffbeb;
+  --ops-sla-warn-border: #fde68a;
+  --ops-sla-critical-bg: #fef2f2;
+  --ops-sla-critical-border: #fecaca;
+
+  --ops-channel-tgo: #f27a1a;
+  --ops-channel-ys: #fa0050;
+  --ops-channel-getir: #5d3ebc;
+
+  --ops-font: Inter, system-ui, -apple-system, sans-serif;
+  --ops-radius-sm: 8px;
+  --ops-radius-md: 12px;
+  --ops-radius-lg: 16px;
+  --ops-shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
+  --ops-shadow-md: 0 4px 16px rgba(15, 23, 42, 0.08);
+  --ops-touch-min: 48px;
+  --ops-input-height: 56px;
+}

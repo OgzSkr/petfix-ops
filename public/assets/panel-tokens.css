@@ -1,0 +1,34 @@
+:root {
+  color-scheme: light;
+
+  --pf-brand-primary: #5c4033;
+  --pf-brand-accent: #e8a598;
+  --pf-brand-accent-strong: #d4897a;
+  --pf-brand-coral: #e07a5f;
+
+  --pf-bg-app: #f4f6f8;
+  --pf-bg-surface: #ffffff;
+  --pf-bg-muted: #f8fafc;
+  --pf-bg-nav: #1e293b;
+  --pf-bg-nav-hover: rgba(255, 255, 255, 0.08);
+  --pf-border: #e2e8f0;
+  --pf-border-strong: #cbd5e1;
+
+  --pf-text-primary: #0f172a;
+  --pf-text-secondary: #64748b;
+  --pf-text-inverse: #f8fafc;
+
+  --pf-status-ok: #2d8a4e;
+  --pf-status-warn: #d97706;
+  --pf-status-danger: #dc2626;
+  --pf-status-info: #2563eb;
+
+  --pf-font: Inter, system-ui, -apple-system, sans-serif;
+  --pf-radius-sm: 8px;
+  --pf-radius-md: 12px;
+  --pf-radius-lg: 16px;
+  --pf-shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
+  --pf-shadow-md: 0 4px 16px rgba(15, 23, 42, 0.08);
+  --pf-sidebar-width: 248px;
+  --pf-drawer-width: 420px;
+}

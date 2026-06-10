@@ -1,0 +1,1413 @@
+/* Trendyol BuyBox sayfası — styles.css ile karışmasın diye ayrı dosya */
+
+.buybox-page main {
+  padding: 16px 20px 32px;
+  max-width: 100%;
+  margin: 0 auto;
+}
+
+.buybox-page .trendyol-page-head {
+  max-width: 100%;
+  margin: 0 auto;
+  padding: 14px 20px 0;
+}
+
+.buybox-page .layout {
+  display: block;
+}
+
+/* Filtreler */
+.buybox-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 12px;
+  align-items: end;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border-soft);
+  background: var(--bg-subtle);
+}
+
+.buybox-filter {
+  display: grid;
+  gap: 4px;
+  min-width: 130px;
+}
+
+.buybox-filter > span {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.buybox-filter select {
+  min-width: 140px;
+  padding: 8px 10px;
+  font-size: 0.82rem;
+}
+
+.buybox-filter--check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: auto;
+  padding-bottom: 6px;
+}
+
+.buybox-filter--check input {
+  width: auto;
+  margin: 0;
+}
+
+.buybox-filter-clear {
+  margin-left: auto;
+  align-self: end;
+}
+
+.buybox-list-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  padding: 0 14px 10px;
+}
+
+.buybox-list-meta .row-count {
+  padding: 0;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.buybox-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  margin-left: auto;
+}
+
+.buybox-page-size {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.buybox-page-size select {
+  min-width: 4.5rem;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  font-size: 0.78rem;
+}
+
+.buybox-page-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.buybox-page-nav button {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.buybox-page-nav button:hover:not(:disabled) {
+  border-color: #94a3b8;
+  background: #f8fafc;
+}
+
+.buybox-page-nav button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.buybox-page-nav .page-status {
+  min-width: 5.5rem;
+  text-align: center;
+  white-space: nowrap;
+}
+
+/* Tablo alanı */
+.buybox-table-wrap {
+  overflow: auto;
+  max-height: calc(100vh - 340px);
+  -webkit-overflow-scrolling: touch;
+}
+
+.buybox-table {
+  width: 100%;
+  min-width: 1120px;
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: fixed;
+  font-size: 0.82rem;
+}
+
+.col-w-product { width: 30%; }
+.col-w-buybox { width: 10%; }
+.col-w-cost { width: 8%; }
+.col-w-desi { width: 5%; }
+.col-w-commission { width: 9%; }
+.col-w-profit { width: 8%; }
+.col-w-rate { width: 7%; }
+.col-w-status { width: 7%; }
+.col-w-detail { width: 6%; }
+.col-w-actions { width: 10%; }
+
+/* Global styles.css td:nth-child(3) kuralını iptal et */
+.buybox-page .buybox-table td:nth-child(3),
+.buybox-page .buybox-table td:nth-child(4) {
+  min-width: 0;
+  max-width: none;
+}
+
+.buybox-page table.buybox-table tbody td {
+  position: static !important;
+  box-shadow: none !important;
+  left: auto !important;
+  z-index: auto !important;
+}
+
+.buybox-table thead {
+  position: relative;
+  z-index: 4;
+}
+
+.buybox-table th,
+.buybox-table td {
+  padding: 12px 10px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.buybox-table thead th {
+  position: sticky !important;
+  top: 0;
+  left: auto !important;
+  z-index: 5 !important;
+  background: #f1f5f9 !important;
+  font-weight: 600;
+  color: var(--muted);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  box-shadow: 0 1px 0 var(--border) !important;
+}
+
+.buybox-table thead th::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 1px;
+  background: var(--border);
+}
+
+.buybox-table tbody td:first-child {
+  position: static !important;
+  box-shadow: none !important;
+  left: auto !important;
+}
+
+.buybox-table tbody tr {
+  transition: background 0.12s;
+}
+
+.buybox-table tbody tr:hover {
+  background: #f8fafc;
+}
+
+.buybox-table tbody tr.selected {
+  background: #fff7ed;
+}
+
+.buybox-table .col-product {
+  min-width: 0;
+  max-width: none;
+  overflow: hidden;
+}
+
+.buybox-table .col-metric {
+  white-space: nowrap;
+}
+
+.buybox-table th.col-detail,
+.buybox-table td.col-detail {
+  text-align: center;
+  position: relative;
+}
+
+.buybox-table th.col-actions,
+.buybox-table td.col-actions {
+  text-align: right;
+}
+
+.buybox-table th.col-editable,
+.buybox-table td.col-editable {
+  text-align: center;
+}
+
+.buybox-table .col-editable {
+  min-width: 0;
+  padding-left: 6px;
+  padding-right: 6px;
+}
+
+.buybox-inline-field {
+  width: 100%;
+  min-width: 64px;
+  max-width: 92px;
+  border: 1px solid #94a3b8;
+  border-radius: 8px;
+  padding: 7px 8px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  background: #fff;
+  color: var(--text);
+  box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.05);
+}
+
+.buybox-inline-field:hover {
+  border-color: var(--accent);
+}
+
+.buybox-inline-field:focus {
+  outline: 2px solid rgba(234, 88, 12, 0.25);
+  border-color: var(--accent);
+}
+
+.buybox-inline-field::placeholder {
+  color: #94a3b8;
+  font-weight: 500;
+}
+
+.buybox-inline-field.is-saving {
+  opacity: 0.6;
+}
+
+.buybox-table .row-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: stretch;
+}
+
+.buybox-table .row-actions .tiny-btn {
+  width: 100%;
+  text-align: center;
+}
+
+/* Ürün hücresi */
+.buybox-product-cell {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.buybox-product-thumb {
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
+  object-fit: cover;
+  background: #f1f5f9;
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.buybox-product-thumb.is-broken {
+  object-fit: contain;
+  opacity: 0.35;
+}
+
+.buybox-thumb-link {
+  display: block;
+  flex-shrink: 0;
+  line-height: 0;
+}
+
+.buybox-product-body {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.buybox-product-link {
+  color: var(--text);
+  font-weight: 600;
+  font-size: 0.84rem;
+  line-height: 1.35;
+  text-decoration: none;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+a.buybox-product-link:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.buybox-product-link.is-static {
+  cursor: default;
+}
+
+.buybox-product-meta {
+  font-size: 0.72rem;
+  color: var(--muted);
+  line-height: 1.3;
+}
+
+.buybox-card-metrics .buybox-inline-field {
+  width: 100%;
+  max-width: none;
+  margin-top: 2px;
+}
+
+.buybox-card-metrics div:has(.buybox-inline-field) {
+  display: grid;
+  gap: 2px;
+}
+
+/* Metrikler */
+.buybox-metric strong {
+  display: block;
+  font-size: 0.9rem;
+}
+
+.buybox-metric--price strong {
+  font-size: 0.95rem;
+}
+
+.buybox-profit-value {
+  font-size: 0.95rem;
+}
+
+.buybox-rank {
+  display: inline-flex;
+  margin-top: 4px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.buybox-rank--win { background: var(--ok-bg); color: var(--ok); }
+.buybox-rank--good { background: #eff6ff; color: #2563eb; }
+.buybox-rank--mid { background: #f8fafc; color: var(--muted); }
+.buybox-rank--low { background: var(--warn-bg); color: var(--warn); }
+
+/* Detay popup — tabloyu bozmasın */
+.buybox-detail summary {
+  cursor: pointer;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--accent);
+  list-style: none;
+  white-space: nowrap;
+}
+
+.buybox-detail summary::-webkit-details-marker {
+  display: none;
+}
+
+.buybox-detail-list {
+  list-style: none;
+  margin: 0;
+  padding: 10px 12px;
+  display: grid;
+  gap: 6px;
+  position: absolute;
+  right: 0;
+  top: calc(100% + 2px);
+  min-width: 200px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  z-index: 20;
+}
+
+.buybox-detail-list li {
+  display: grid;
+  gap: 1px;
+  font-size: 0.72rem;
+}
+
+.buybox-detail-list span {
+  color: var(--muted);
+}
+
+.buybox-detail-list strong {
+  color: var(--text);
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.buybox-detail-warn strong {
+  color: var(--warn);
+}
+
+/* Mobil kartlar */
+.buybox-cards {
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px;
+}
+
+@media (min-width: 900px) {
+  .buybox-cards {
+    display: none;
+  }
+}
+
+@media (max-width: 899px) {
+  .buybox-table-wrap {
+    display: none;
+  }
+}
+
+.buybox-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px;
+  background: var(--surface);
+  cursor: pointer;
+}
+
+.buybox-card:hover {
+  border-color: #94a3b8;
+}
+
+.buybox-card.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(234, 88, 12, 0.15);
+}
+
+.buybox-card-product {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.buybox-card .card-title-link,
+.buybox-card .card-title {
+  font-weight: 600;
+  font-size: 0.88rem;
+  margin: 0;
+  line-height: 1.35;
+}
+
+.buybox-card .card-title-link {
+  color: var(--text);
+  text-decoration: none;
+}
+
+.buybox-card .card-title-link:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.buybox-card-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 12px;
+  margin: 10px 0;
+  font-size: 0.78rem;
+}
+
+.buybox-card-metrics div {
+  display: grid;
+  gap: 2px;
+}
+
+.buybox-card-metrics span {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.buybox-card-metrics strong {
+  font-size: 0.88rem;
+}
+
+.buybox-card .card-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: flex-start;
+  margin-bottom: 8px;
+}
+
+.buybox-card .card-brand {
+  font-size: 0.75rem;
+  color: var(--muted);
+  margin: 2px 0 0;
+}
+
+.buybox-card .card-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+@media (max-width: 900px) {
+  .buybox-filter-clear {
+    margin-left: 0;
+    width: 100%;
+  }
+}
+
+/* Takip listesi sekmesi */
+.autotrack-panel {
+  padding: 16px;
+}
+
+.autotrack-intro {
+  margin-bottom: 16px;
+}
+
+.autotrack-intro p {
+  margin: 0 0 8px;
+  font-size: 0.86rem;
+  line-height: 1.5;
+}
+
+.autotrack-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: end;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-subtle);
+  margin-bottom: 16px;
+}
+
+.autotrack-field {
+  display: grid;
+  gap: 4px;
+  min-width: 160px;
+}
+
+.autotrack-field > span {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.autotrack-field input,
+.autotrack-field select {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.autotrack-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.autotrack-panel .auto-track-list {
+  max-height: none;
+}
+
+.tariff-banner {
+  margin: 0 0 12px;
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  color: #1e3a8a;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.tariff-panel {
+  padding: 0;
+  --tariff-zoom: 1;
+}
+
+.tariff-top-bar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: #fde8ef;
+  border-bottom: 1px solid #f9a8c9;
+}
+
+.tariff-date-range {
+  margin: 0;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: #831843;
+}
+
+.tariff-upload-btn {
+  padding: 8px 14px;
+  border: 0;
+  border-radius: 8px;
+  background: #2563eb;
+  color: #fff;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.tariff-upload-btn:hover {
+  background: #1d4ed8;
+}
+
+.tariff-import-panel,
+.tariff-empty {
+  padding: 16px;
+}
+
+.tariff-empty {
+  text-align: center;
+  color: var(--muted);
+}
+
+.tariff-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: end;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  background: #fff;
+}
+
+.tariff-btn-clear {
+  padding: 8px 14px;
+  border: 0;
+  border-radius: 8px;
+  background: #f472b6;
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.tariff-btn-filter,
+.tariff-btn-calc {
+  padding: 8px 14px;
+  border: 0;
+  border-radius: 8px;
+  background: #78350f;
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.tariff-btn-calc {
+  padding: 6px 12px;
+  font-size: 0.78rem;
+}
+
+.tariff-table-bar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  background: #fb923c;
+  color: #fff;
+}
+
+.tariff-table-title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.tariff-table-bar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: end;
+}
+
+.tariff-zoom {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.tariff-zoom button {
+  min-width: 32px;
+  padding: 4px 6px;
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.35);
+}
+
+.tariff-zoom span {
+  min-width: 42px;
+  text-align: center;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.tariff-inline-field--compact {
+  min-width: 72px;
+}
+
+.tariff-inline-field--compact > span {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.tariff-inline-field--compact input,
+.tariff-bulk-select {
+  padding: 6px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.95);
+  font-size: 0.78rem;
+}
+
+.tariff-export-link {
+  padding: 6px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 8px;
+  background: transparent;
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.tariff-bulk-status {
+  margin: 0;
+  padding: 6px 16px;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.tariff-filter-field {
+  display: grid;
+  gap: 4px;
+  min-width: 140px;
+}
+
+.tariff-filter-field--narrow {
+  min-width: 90px;
+}
+
+.tariff-filter-field > span,
+.tariff-inline-field > span {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+.tariff-filter-field input,
+.tariff-filter-field select,
+.tariff-inline-field input {
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  font-size: 0.82rem;
+}
+
+.tariff-filter-actions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.tariff-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 16px;
+  background: #fff4ec;
+  border-bottom: 1px solid #fed7aa;
+}
+
+.tariff-toolbar-right {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: end;
+}
+
+.tariff-inline-field {
+  display: grid;
+  gap: 4px;
+  min-width: 90px;
+}
+
+.tariff-grid-wrap {
+  overflow: auto;
+  max-height: calc(100vh - 340px);
+  border-bottom: 1px solid var(--border);
+}
+
+.tariff-analysis-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: calc(0.78rem * var(--tariff-zoom));
+}
+
+.tariff-analysis-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #fdba74;
+  color: #7c2d12;
+  padding: 10px 8px;
+  text-align: left;
+  font-size: calc(0.68rem * var(--tariff-zoom));
+  font-weight: 700;
+  text-transform: uppercase;
+  white-space: nowrap;
+  border-right: 1px solid rgba(255, 255, 255, 0.35);
+  border-bottom: 2px solid #ea580c;
+}
+
+.tariff-analysis-table tbody td {
+  padding: 10px 8px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+  background: var(--surface);
+}
+
+.tariff-analysis-table tbody tr.is-selected td {
+  background: #fffbeb;
+}
+
+.tariff-analysis-table .col-product {
+  min-width: 260px;
+}
+
+.tariff-variant-tag {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: #fce7f3;
+  color: #9d174d;
+  font-size: 0.68rem;
+  font-weight: 600;
+}
+
+.tariff-product-cell {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.tariff-product-thumb {
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+}
+
+.tariff-product-meta {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.tariff-product-meta strong {
+  font-size: 0.8rem;
+  line-height: 1.3;
+}
+
+.tariff-product-meta span,
+.tariff-product-meta small {
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+
+.tariff-tier-cell {
+  display: grid;
+  gap: 6px;
+  min-width: 150px;
+}
+
+.tariff-tier-range {
+  font-weight: 600;
+  font-size: 0.76rem;
+}
+
+.tariff-tier-rate {
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+
+.tariff-pill {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.tariff-pill--profit {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.tariff-pill--loss {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.tariff-pill--muted {
+  background: #f3f4f6;
+  color: #6b7280;
+}
+
+.tariff-tier-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.tariff-manual-cell {
+  display: grid;
+  gap: 6px;
+  min-width: 130px;
+}
+
+.tariff-manual-input {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.tariff-manual-result {
+  display: grid;
+  gap: 4px;
+}
+
+.tariff-manual-result small {
+  color: var(--muted);
+  font-size: 0.64rem;
+}
+
+.tariff-current-price {
+  color: #dc2626;
+  font-size: 1.05em;
+}
+
+.tariff-table-footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+}
+
+.tariff-pagination {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.tariff-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: end;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-subtle);
+  margin-bottom: 16px;
+}
+
+.tariff-field {
+  display: grid;
+  gap: 4px;
+  min-width: 180px;
+}
+
+.tariff-field--file {
+  min-width: 240px;
+  flex: 1;
+}
+
+.tariff-field > span {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.tariff-field input {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.tariff-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.tariff-status-card {
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.tariff-status-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.tariff-status-grid span {
+  display: block;
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+.buybox-commission-cell {
+  display: grid;
+  gap: 2px;
+}
+
+.buybox-tier-tag,
+.buybox-tier-source {
+  display: inline-block;
+  font-size: 0.64rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.buybox-tier-source {
+  color: #1d4ed8;
+}
+
+.tariff-bulk {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.tariff-bulk h3 {
+  margin: 0 0 8px;
+  font-size: 0.95rem;
+}
+
+.tariff-bulk-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: end;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-subtle);
+  margin: 12px 0;
+}
+
+.tariff-tier-checks {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  min-width: 220px;
+}
+
+.tariff-tier-checks legend {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--muted);
+  margin-bottom: 4px;
+  width: 100%;
+}
+
+.tariff-tier-checks label,
+.tariff-check-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.82rem;
+}
+
+.tariff-selection-summary {
+  margin-bottom: 12px;
+}
+
+.tariff-preview-wrap {
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.tariff-preview-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+}
+
+.tariff-preview-table th,
+.tariff-preview-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.tariff-preview-table th {
+  position: sticky;
+  top: 0;
+  background: var(--bg-subtle);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.dashboard-tariff-panel {
+  padding: 0 0 16px;
+}
+
+.dashboard-tariff-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: #fff7ed;
+  border-bottom: 1px solid #fed7aa;
+}
+
+.dashboard-tariff-summary {
+  font-size: 0.88rem;
+  color: #9a3412;
+  line-height: 1.45;
+}
+
+.dashboard-tariff-missing {
+  font-weight: 700;
+  color: #c2410c;
+}
+
+.dashboard-tariff-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.dashboard-tariff-link {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 14px;
+  border-radius: 8px;
+  text-decoration: none;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.dashboard-tariff-table-wrap {
+  max-height: 70vh;
+}
+
+.dashboard-tariff-cards {
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px;
+}
+
+@media (min-width: 769px) {
+  .dashboard-tariff-cards {
+    display: none;
+  }
+}
+
+@media (max-width: 768px) {
+  .dashboard-tariff-table-wrap {
+    display: none;
+  }
+
+  .dashboard-tariff-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .dashboard-tariff-actions {
+    width: 100%;
+  }
+
+  .dashboard-tariff-actions .ghost,
+  .dashboard-tariff-actions .dashboard-tariff-link {
+    flex: 1;
+    justify-content: center;
+  }
+
+  .analytics-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .analytics-table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .analytics-table {
+    min-width: 520px;
+  }
+
+  .autotrack-form {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .autotrack-field {
+    width: 100%;
+  }
+
+  .panel-head .toolbar {
+    width: 100%;
+  }
+
+  .panel-head .toolbar input[type="search"] {
+    width: 100%;
+  }
+}
+
+.buybox-stat-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  font-size: 0.72rem;
+  color: #64748b;
+}
+
+.buybox-stat-chip strong {
+  color: #0f172a;
+  font-weight: 700;
+}
+
+.buybox-card-metrics--chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.track-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px;
+  background: var(--surface);
+  display: grid;
+  gap: 10px;
+}
+
+.track-card-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.track-card-product {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.track-card-product strong {
+  font-size: 0.88rem;
+}
+
+.track-card-product span {
+  font-size: 0.82rem;
+  color: var(--text);
+}
+
+.track-card-product small {
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.track-card-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.track-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.track-priority-badge {
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.track-priority-badge--critical {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.track-priority-badge--normal {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.track-priority-badge--low {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.track-error {
+  margin: 0;
+  font-size: 0.76rem;
+  color: #b45309;
+}

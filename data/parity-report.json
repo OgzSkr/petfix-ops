@@ -1,0 +1,37 @@
+{
+  "ok": true,
+  "generatedAt": "2026-05-25T04:29:17.734Z",
+  "config": {
+    "dbReadBackend": "sqlite",
+    "sqliteDualWrite": true
+  },
+  "report": {
+    "generatedAt": "2026-05-25T04:29:17.734Z",
+    "ok": true,
+    "readParity": {
+      "ok": true,
+      "counts": {
+        "products": {
+          "json": 476,
+          "sqlite": 476
+        },
+        "costs": {
+          "json": 476,
+          "sqlite": 476
+        },
+        "snapshots": {
+          "json": 830,
+          "sqlite": 830
+        }
+      },
+      "mismatches": [],
+      "priceMismatches": [],
+      "collectionMismatches": []
+    },
+    "profitParity": {
+      "ok": true,
+      "sampled": 20,
+      "mismatches": []
+    }
+  }
+}
