@@ -22,31 +22,18 @@ test('buildMasterChannelPrices resolves barcode match without mapping', () => {
           lastUnitPrice: 125,
           catalogOnSale: true
         },
-        {
-          channelId: 'woocommerce',
-          channelProductId: 'FLX1',
-          channelBarcode: '7613287487636',
-          channelPrice: 100
-        }
       ],
-      mappings: [{
-        id: 'map-wc',
-        channelId: 'woocommerce',
-        channelProductId: 'FLX1',
-        masterProductId: 'mp-1',
-        status: 'manual_confirmed'
-      }]
+      mappings: []
     }
   };
 
   const prices = buildMasterChannelPrices(db, master);
   const uber = prices.find((p) => p.channelId === 'uber-eats');
-  const wc = prices.find((p) => p.channelId === 'woocommerce');
+  const ys = prices.find((p) => p.channelId === 'yemeksepeti');
 
   assert.equal(uber.channelPrice, 125);
   assert.equal(uber.saleDiffPct, 25);
   assert.equal(uber.barcodeMatchOnly, true);
-  assert.equal(wc.channelPrice, 100);
-  assert.equal(wc.saleDiffPct, 0);
-  assert.equal(wc.hasConfirmedMapping, true);
+  assert.equal(ys.channelPrice, null);
+  assert.equal(ys.barcodeMatchOnly, false);
 });

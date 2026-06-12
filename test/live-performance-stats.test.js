@@ -8,8 +8,24 @@ import {
 
 test('buildOrderStats totalSales equals sum of row salesAmount', () => {
   const rows = [
-    { salesAmount: 1090, netProfit: 100, profitRate: 10, profitMargin: 8 },
-    { salesAmount: 1354, netProfit: 200, profitRate: 15, profitMargin: 12 }
+    {
+      orderNumber: 'KPI-1',
+      salesAmount: 1090,
+      productCost: 500,
+      netProfit: 100,
+      profitRate: 10,
+      profitMargin: 8,
+      profitConfidence: 'complete'
+    },
+    {
+      orderNumber: 'KPI-2',
+      salesAmount: 1354,
+      productCost: 600,
+      netProfit: 200,
+      profitRate: 15,
+      profitMargin: 12,
+      profitConfidence: 'complete'
+    }
   ];
   const stats = buildOrderStats(rows);
   const sum = rows.reduce((acc, row) => acc + row.salesAmount, 0);
@@ -38,7 +54,10 @@ test('buildLivePerformanceStats keeps ciro aligned with order amounts', () => {
   ];
 
   const rows = analyzeOrderPackages(packages, { products: [] }, {
-    costByBarcode: {},
+    costByBarcode: {
+      1: { unitCost: 400 },
+      2: { unitCost: 200 }
+    },
     defaultShippingCost: 0,
     serviceFee: 0,
     stoppageRate: 0,

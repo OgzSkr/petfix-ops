@@ -6,15 +6,15 @@ test('listPlatformNavTabs follows corporate navigation order', async () => {
   const tabs = listPlatformNavTabs();
   const labels = tabs.map((tab) => tab.label);
   assert.deepEqual(labels, [
-    'Genel Bakış',
-    'Trendyol Pazaryeri',
+    'MarketNext',
     'Uber Eats / Trendyol Go',
-    'Getir',
     'Yemeksepeti',
-    'BenimPOS',
+    'Pazaryeri',
+    'E-Ticaret',
     'Ayarlar'
   ]);
-  assert.equal(tabs.find((tab) => tab.id === 'getir')?.badge, 'yakında');
+  assert.equal(tabs.find((tab) => tab.id === 'marketnext')?.href, '/marketnext');
+  assert.equal(tabs.find((tab) => tab.id === 'marketplace')?.href, '/marketplace/trendyol');
 });
 
 test('buildDataIntegrityAudit returns read-only report shape', async () => {

@@ -148,7 +148,7 @@ test('productPoolUrlForMappingStatus opens channel tab for pending mapping', () 
 test('orderDetailPageUrl deep links to channel order detail', () => {
   assert.equal(
     orderDetailPageUrl('trendyol-marketplace', '11269278264', { days: 1 }),
-    '/siparisler?order=11269278264&days=1'
+    '/marketplace/orders?order=11269278264&days=1'
   );
   assert.match(orderDetailPageUrl('uber-eats', '998877'), /^\/marketnext\/orders\/uber-eats\?order=998877/);
 });
