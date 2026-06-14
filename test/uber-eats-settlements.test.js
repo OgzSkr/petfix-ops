@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { settlementsToOrderPackages } from '../lib/channels/uber-eats-orders.js';
+import { analyzeOrderPackages, buildChannelProductTitleByBarcode, buildProductTitleByBarcode } from '../lib/order-profitability.js';
+import { ensureProductMatching } from '../lib/product-matching/schema.js';
 
 test('settlementsToOrderPackages splits stacked discounts per sale line', () => {
   const orderNumber = '11284448834';
@@ -29,13 +31,120 @@ test('settlementsToOrderPackages splits stacked discounts per sale line', () => 
 
   const pkg = packages[0];
   assert.equal(pkg.orderNumber, orderNumber);
-  assert.equal(pkg.lines.length, 6);
+  assert.equal(pkg.lines.length, 1);
+  assert.equal(pkg.lines[0].quantity, 6);
   assert.equal(pkg.packageGrossAmount, 750);
   assert.equal(pkg.packageTotalDiscount, 75);
+  assert.equal(pkg.lines[0].lineGrossAmount, 750);
+  assert.equal(pkg.lines[0].lineSellerDiscount, 75);
+  assert.ok(Math.abs(pkg.lines[0].commissionAmount - 195.96) < 0.1);
+});
 
-  for (const line of pkg.lines) {
-    assert.equal(line.lineGrossAmount, 125);
-    assert.equal(line.lineSellerDiscount, 12.5);
-    assert.ok(Math.abs(line.commissionAmount - 32.66) < 0.02);
-  }
+test('analyzeOrderPackages replaces generic Satış line names from catalog/master', () => {
+  const barcode = '8680589182803';
+  const db = { products: [] };
+  ensureProductMatching(db);
+  db.productMatching.channelProducts.push({
+    channelId: 'uber-eats',
+    channelProductId: barcode,
+    channelBarcode: barcode,
+    channelName: 'Felix Party Mix Karışık 60 Gr',
+    uberBrand: 'Felix'
+  });
+  db.productMatching.masterProducts.push({
+    id: 'mp-1',
+    benimposBarcode: barcode,
+    name: 'Felix Party Mix 60g'
+  });
+
+  const titles = buildProductTitleByBarcode(db);
+  assert.equal(titles[barcode], 'Felix Party Mix Karışık 60 Gr');
+
+  const packages = settlementsToOrderPackages([{
+    orderNumber: '11320477240',
+    barcode,
+    credit: 125,
+    commissionRate: 20,
+    commissionAmount: 25,
+    description: 'Satış',
+    transactionDate: Date.now()
+  }], []);
+
+  const rows = analyzeOrderPackages(packages, db, {
+    channelId: 'uber-eats',
+    productMatchingMode: 'legacy',
+    costScope: 'uber-eats'
+  });
+
+  assert.equal(rows[0].lines[0].productName, 'Felix Party Mix Karışık 60 Gr');
+  assert.notEqual(rows[0].lines[0].productName.toLowerCase(), 'satış');
+});
+
+test('analyzeOrderPackages does not use master or other-channel names for order lines', () => {
+  const barcode = '8680589182803';
+  const db = { products: [] };
+  ensureProductMatching(db);
+  db.productMatching.channelProducts.push({
+    channelId: 'uber-eats',
+    channelProductId: barcode,
+    channelBarcode: barcode,
+    channelName: 'Satış',
+    uberBrand: 'Felix'
+  });
+  db.productMatching.channelProducts.push({
+    channelId: 'yemeksepeti',
+    channelProductId: 'YS-1',
+    channelBarcode: barcode,
+    channelName: 'Yanlış YS adı'
+  });
+  db.productMatching.masterProducts.push({
+    id: 'mp-1',
+    benimposBarcode: barcode,
+    name: 'Felix Party Mix 60g'
+  });
+
+  const packages = settlementsToOrderPackages([{
+    orderNumber: '11320477240',
+    barcode,
+    credit: 125,
+    description: 'Satış',
+    transactionDate: Date.now()
+  }], []);
+
+  const rows = analyzeOrderPackages(packages, db, {
+    channelId: 'uber-eats',
+    productMatchingMode: 'legacy',
+    costScope: 'other-channels'
+  });
+
+  assert.equal(rows[0].lines[0].productName, '—');
+  assert.notEqual(rows[0].lines[0].productName, 'Yanlış YS adı');
+  assert.notEqual(rows[0].lines[0].productName, 'Felix Party Mix 60g');
+});
+
+test('buildChannelProductTitleByBarcode ignores other channels on same barcode', () => {
+  const barcode = '07613036508032';
+  const db = { products: [] };
+  ensureProductMatching(db);
+  db.productMatching.channelProducts.push(
+    {
+      channelId: 'uber-eats',
+      channelBarcode: barcode,
+      channelName: 'Açık Purina Pro Plan Tavuklu Yetişkin Kedi Maması 500 gr'
+    },
+    {
+      channelId: 'yemeksepeti',
+      channelBarcode: barcode,
+      channelName: 'Purina Pro Plan Renal Plus Tavuk Etli Yetişkin Kedi Maması 10 kg'
+    }
+  );
+
+  assert.equal(
+    buildChannelProductTitleByBarcode(db, 'uber-eats')[barcode],
+    'Açık Purina Pro Plan Tavuklu Yetişkin Kedi Maması 500 gr'
+  );
+  assert.equal(
+    buildProductTitleByBarcode(db)[barcode],
+    'Purina Pro Plan Renal Plus Tavuk Etli Yetişkin Kedi Maması 10 kg'
+  );
 });

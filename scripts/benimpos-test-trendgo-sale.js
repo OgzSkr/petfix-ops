@@ -21,7 +21,8 @@ import { createBenimposClient, readBenimposConfig } from '../lib/benimpos/client
 import {
   BENIMPOS_PAYMENT,
   buildChannelSaleFromOrder,
-  createSale
+  createSale,
+  saleOrderFromBuilt
 } from '../lib/benimpos/sales-create.js';
 import { readDb, configureDbStore } from '../lib/db/store.js';
 import { paths, resolveRuntimeConfig } from '../lib/config.js';
@@ -186,8 +187,7 @@ async function main() {
 
   const built = buildChannelSaleFromOrder({
     ...orderPackage,
-    orderNumber: args.uberOrder || orderPackage.orderNumber,
-    customerCode: 'TRENDGO-Musteri'
+    orderNumber: args.uberOrder || orderPackage.orderNumber
   }, db, { channelId: 'uber-eats', mode, salePolicy: 'sale-strict' });
 
   const payload = built.payload;
@@ -202,6 +202,10 @@ async function main() {
 
   console.log('\n--- TRENDGO payload (paymentType: ' + BENIMPOS_PAYMENT.TRENDGO + ') ---');
   console.log(JSON.stringify(payload, null, 2));
+  if (built.financials) {
+    console.log('\n--- Uber finans özeti ---');
+    console.log(JSON.stringify(built.financials, null, 2));
+  }
 
   if (args.dryRun) {
     console.log('\nDry-run tamam. Gerçek gönderim için --execute ekleyin (stok düşer).');
@@ -209,21 +213,7 @@ async function main() {
   }
 
   console.log('\n⚠️  Gerçek satış gönderiliyor — BenimPOS stok düşecek...');
-  const saleData = payload.data;
-  const result = await createSale(client, {
-    paymentType: saleData.paymentType,
-    note: saleData.note,
-    customerCode: saleData.customerCode,
-    date: saleData.date,
-    time: saleData.time,
-    lines: saleData.products.map((p) => ({
-      barcode: p.barcode,
-      title: p.name,
-      unitPrice: p.price,
-      quantity: p.quantity,
-      taxRate: p.taxRate
-    }))
-  });
+  const result = await createSale(client, saleOrderFromBuilt(built));
 
   console.log('\n--- BenimPOS yanıtı ---');
   console.log(JSON.stringify(result, null, 2));

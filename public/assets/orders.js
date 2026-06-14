@@ -1781,12 +1781,14 @@ function openOpsDetail(index) {
         '<h4>Ürün Bilgileri</h4>' +
         renderOpsLineItems(row.lines, channelId) +
         renderOpsOrderTotalsFooter(totals) +
+        renderOpsBenimposActions(row) +
       '</section>' +
       '<div class="ops-detail-side">' +
         '<section class="ops-detail-section">' +
           '<h4>Müşteri Bilgileri</h4>' +
           '<dl class="ops-detail-dl">' +
             detailItem('Adı Soyadı', row.customerName || '—') +
+            detailItem('TC Kimlik No', row.customerIdentityNumber || '—') +
             detailItem('Telefon', formatOpsPhone(row)) +
             detailItem('Adres', row.customerAddress || '—') +
             detailItem('Tarif', row.customerNote || row.deliveryNote || '—') +
@@ -1816,6 +1818,34 @@ function openOpsDetail(index) {
     '</div>';
 
   modalBackdrop.classList.add('open');
+
+  const benimposBtn = document.getElementById('benimposPreviewBtn');
+  if (benimposBtn) {
+    benimposBtn.addEventListener('click', () => {
+      window.BuyBoxBenimposSale?.openPreview(row, activeDays);
+    });
+  }
+}
+
+function renderOpsBenimposActions(row) {
+  if (!bootstrap.benimposSaleEnabled) return '';
+  const channelId = row.channel || row.channelId || '';
+  if (!['uber-eats', 'yemeksepeti'].includes(channelId)) return '';
+
+  const status = row.benimposTransferStatus;
+  if (status === 'transferred') {
+    return '<div class="ops-detail-actions ops-detail-actions--benimpos">' +
+      '<p class="muted">BenimPOS satışı oluşturulmuş.</p></div>';
+  }
+  if (status !== 'ready') {
+    return '<div class="ops-detail-actions ops-detail-actions--benimpos">' +
+      '<p class="orders-warn-box">' + esc(row.benimposTransferNote || 'BenimPOS gönderimi için eşleştirme gerekli.') + '</p></div>';
+  }
+
+  return '<div class="ops-detail-actions ops-detail-actions--benimpos">' +
+    '<button type="button" class="btn-green" id="benimposPreviewBtn">BenimPOS\'a Gönder</button>' +
+    '<p class="muted ops-detail-actions-note">Brüt fiyat, indirim ve komisyon BenimPOS satışına yansıtılır; net hakediş tutarı korunur.</p>' +
+  '</div>';
 }
 
 function renderOpsBenimposTransferDetail(row) {
@@ -1824,7 +1854,7 @@ function renderOpsBenimposTransferDetail(row) {
 
   const labels = {
     transferred: 'Aktarıldı',
-    ready: 'Hazır (otomatik aktarım yakında)',
+    ready: 'Gönderime hazır',
     blocked: 'Engelli'
   };
   const channelId = row.channel || row.channelId || '';
@@ -1842,12 +1872,21 @@ function renderOpsBenimposTransferDetail(row) {
 function opsOrderTotals(row, lines) {
   const items = Array.isArray(lines) ? lines : [];
   const lineSum = items.reduce((sum, line) => sum + (Number(line.lineSalesAmount) || 0), 0);
-  const basket = lineSum > 0 ? lineSum : Number(row.packageGrossAmount || row.salesAmount) || 0;
+  const basket = lineSum > 0
+    ? lineSum
+    : Number(row.packageGrossAmount || row.salesAmount) || 0;
   const discount = Number(row.packageTotalDiscount) || 0;
+  const commission = Number(row.commissionAmount) || items.reduce(
+    (sum, line) => sum + (Number(line.commissionAmount) || 0),
+    0
+  );
   const total = discount > 0
     ? Math.max(0, basket - discount)
     : Number(row.salesAmount || basket) || 0;
-  return { basket, discount, total };
+  const netHakedis = commission > 0
+    ? Math.max(0, basket - discount - commission)
+    : null;
+  return { basket, discount, commission, total, netHakedis };
 }
 
 function renderOpsOrderTotalsFooter(totals) {
@@ -1856,12 +1895,29 @@ function renderOpsOrderTotalsFooter(totals) {
         '<span>İndirim</span><strong>-' + formatMoney(totals.discount) + ' ₺</strong>' +
       '</div>'
     : '';
+  const commissionRow = totals.commission > 0
+    ? '<div class="ops-detail-total-row ops-detail-total-row--commission">' +
+        '<span>Komisyon</span><strong>-' + formatMoney(totals.commission) + ' ₺</strong>' +
+      '</div>'
+    : '';
+  const netRow = totals.netHakedis != null
+    ? '<div class="ops-detail-total-row ops-detail-total-row--net">' +
+        '<span>Net Hakediş</span><strong>' + formatMoney(totals.netHakedis) + ' ₺</strong>' +
+      '</div>'
+    : '';
+  const grandLabel = totals.netHakedis != null ? 'Ara Toplam' : 'TOPLAM';
+  const grandValue = totals.netHakedis != null ? totals.total : totals.total;
   return '<div class="ops-detail-totals">' +
     '<div class="ops-detail-total-row"><span>Sepet</span><strong>' + formatMoney(totals.basket) + ' ₺</strong></div>' +
     discountRow +
-    '<div class="ops-detail-total-row ops-detail-total-row--grand">' +
-      '<span>TOPLAM</span><strong>' + formatMoney(totals.total) + ' ₺</strong>' +
-    '</div>' +
+    commissionRow +
+    (totals.netHakedis != null
+      ? '<div class="ops-detail-total-row ops-detail-total-row--subtotal">' +
+          '<span>' + grandLabel + '</span><strong>' + formatMoney(grandValue) + ' ₺</strong>' +
+        '</div>' + netRow
+      : '<div class="ops-detail-total-row ops-detail-total-row--grand">' +
+          '<span>TOPLAM</span><strong>' + formatMoney(totals.total) + ' ₺</strong>' +
+        '</div>') +
   '</div>';
 }
 

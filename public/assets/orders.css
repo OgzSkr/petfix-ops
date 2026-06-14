@@ -911,6 +911,30 @@
   padding-left: 18px;
 }
 
+.benimpos-financials {
+  padding: 12px 14px;
+  border-radius: 8px;
+  margin-bottom: 12px;
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  font-size: 0.85rem;
+}
+
+.benimpos-financials-grid {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px 16px;
+  margin-top: 8px;
+}
+
+.benimpos-financials-grid .is-deduct { color: #b45309; }
+.benimpos-financials-grid .is-net { color: #047857; font-size: 1rem; }
+
+.benimpos-financials-note {
+  margin: 10px 0 0;
+  font-size: 0.75rem;
+}
+
 .benimpos-preview-table-wrap {
   overflow: auto;
   max-height: 420px;
@@ -1831,6 +1855,35 @@
 }
 .ops-detail-total-row--discount strong {
   color: #dc2626;
+}
+.ops-detail-total-row--commission strong {
+  color: #dc2626;
+}
+.ops-detail-total-row--subtotal {
+  border-top: 1px dashed #cbd5e1;
+  padding-top: 8px;
+  margin-top: 4px;
+}
+.ops-detail-total-row--net {
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 2px solid #047857;
+}
+.ops-detail-total-row--net strong {
+  color: #047857;
+  font-size: 1.05rem;
+}
+.ops-detail-actions--benimpos {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid #e5e7eb;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ops-detail-actions-note {
+  margin: 0;
+  font-size: 0.78rem;
 }
 .ops-detail-total-row--grand {
   margin-top: 4px;

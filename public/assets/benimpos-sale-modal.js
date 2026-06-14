@@ -17,6 +17,8 @@ const CHANNEL_LABEL = bootstrap.channelLabel || 'Kanal';
 let currentOrder = null;
 let currentPreview = null;
 let currentDays = 14;
+let currentChannelId = CHANNEL_ID;
+let currentChannelLabel = CHANNEL_LABEL;
 let masterSearchTimer = null;
 
 const STATUS_LABELS = {
@@ -43,6 +45,11 @@ window.BuyBoxBenimposSale = {
     if (!bootstrap.benimposSaleEnabled) return;
     currentOrder = orderRow;
     currentDays = days;
+    currentChannelId = orderRow.channel || orderRow.channelId || bootstrap.channelId || 'uber-eats';
+    currentChannelLabel = orderRow.channelLabel
+      || (currentChannelId === 'uber-eats' ? 'Trendyol Go' : '')
+      || bootstrap.channelLabel
+      || 'Kanal';
     titleEl.textContent = `BenimPOS Ön İzleme — #${orderRow.orderNumber}`;
     bodyEl.innerHTML = '<p class="matching-loading">Eşleştirme kontrol ediliyor…</p>';
     actionsEl.hidden = true;
@@ -57,7 +64,7 @@ async function loadPreview() {
     const response = await window.BuyBoxCommon.authFetch('/api/benimpos/preview-channel-sale', {
       method: 'POST',
       body: JSON.stringify({
-        channelId: CHANNEL_ID,
+        channelId: currentChannelId,
         orderNumber: currentOrder.orderNumber,
         days: currentDays
       })
@@ -91,12 +98,13 @@ function renderPreview(data) {
           (readiness.nextSteps || []).map((s) =>
             `<a href="${esc(s.href)}" class="btn-mini">${esc(s.label)}</a>`
           ).join(' ') +
-          `<a href="/marketnext/matching?tab=${escAttr(CHANNEL_ID)}" class="btn-mini ghost">Ana Ürün Havuzu</a>` +
+          `<a href="/hzlmrktops/urunler?tab=${escAttr(currentChannelId)}" class="btn-mini ghost">Ana Ürün Havuzu</a>` +
         `</div></div>`;
   }
 
   const canSend = data.canSendRealSale ?? data.canSend;
   const summaryClass = canSend ? 'benimpos-summary benimpos-summary--ok' : 'benimpos-summary benimpos-summary--blocked';
+  const financialsHtml = renderFinancialSummary(data.financials);
   const summaryHtml =
     `<div class="${summaryClass}">` +
       `<strong>${canSend ? 'Eşleştirme tamam — gönderime hazır' : 'Eşleştirme eksik — gönderim engelli'}</strong>` +
@@ -109,9 +117,9 @@ function renderPreview(data) {
   const rows = (data.lines || []).map((line, idx) => renderPreviewRow(line, idx)).join('');
 
   bodyEl.innerHTML =
-    policyNote + readinessHtml + summaryHtml +
+    policyNote + readinessHtml + financialsHtml + summaryHtml +
     '<div class="benimpos-preview-table-wrap"><table class="benimpos-preview-table">' +
-    `<thead><tr><th>${esc(CHANNEL_LABEL)} ürün</th><th>BenimPOS</th><th>Stok</th><th>Alış</th><th>Eşleşme</th><th>Durum / İşlem</th></tr></thead>` +
+    `<thead><tr><th>${esc(currentChannelLabel)} ürün</th><th>BenimPOS</th><th>Stok</th><th>Alış</th><th>Eşleşme</th><th>Durum / İşlem</th></tr></thead>` +
     `<tbody>${rows || '<tr><td colspan="6">Satır yok</td></tr>'}</tbody></table></div>`;
 
   bindPreviewRowActions();
@@ -119,6 +127,20 @@ function renderPreview(data) {
   actionsEl.hidden = false;
   confirmBtn.disabled = !canSend;
   confirmBtn.textContent = canSend ? 'BenimPOS\'a Gönder' : 'Eşleştirme Tamamlanmadan Gönderilemez';
+}
+
+function renderFinancialSummary(financials) {
+  if (!financials || !financials.grossAmount) return '';
+  return `<div class="benimpos-financials" aria-label="Uber finans özeti">
+    <strong>BenimPOS satış tutarı (Uber hakediş)</strong>
+    <div class="benimpos-financials-grid">
+      <span>Brüt fiyat</span><strong>₺${formatMoney(financials.grossAmount)}</strong>
+      <span>Satıcı indirimi</span><strong class="is-deduct">−₺${formatMoney(financials.sellerDiscount)}</strong>
+      <span>Komisyon</span><strong class="is-deduct">−₺${formatMoney(financials.commissionAmount)}</strong>
+      <span>Net hakediş</span><strong class="is-net">₺${formatMoney(financials.netAmount)}</strong>
+    </div>
+    <p class="muted benimpos-financials-note">Ürün satırları brüt fiyatla gider; indirim + komisyon BenimPOS <code>discountRate</code> (%${formatMoney(financials.discountRate)}) ile düşülür.</p>
+  </div>`;
 }
 
 function renderPreviewRow(line, idx) {
@@ -132,7 +154,7 @@ function renderPreviewRow(line, idx) {
 
   return `<tr class="${rowClass}" data-line-idx="${idx}">
     <td><div class="benimpos-line-name">${esc(line.channelProductName || '—')}</div>
-      <div class="benimpos-line-meta">${esc(CHANNEL_LABEL)}: ${esc(line.channelBarcode)} · ${esc(line.quantity)} adet</div></td>
+      <div class="benimpos-line-meta">${esc(currentChannelLabel)}: ${esc(line.channelBarcode)} · ${esc(line.quantity)} adet</div></td>
     <td>${line.masterName ? `<div>${esc(line.masterName)}</div><div class="benimpos-line-meta">${esc(line.masterBarcode)}</div>` : '—'}</td>
     <td>${line.stock != null ? esc(line.stock) : '—'}</td>
     <td>${line.buyingPrice ? '₺' + formatMoney(line.buyingPrice) : '—'}</td>
@@ -264,7 +286,7 @@ async function confirmInlineMapping(btn) {
   const response = await window.BuyBoxCommon.authFetch('/api/product-matching/confirm', {
     method: 'POST',
     body: JSON.stringify({
-      channelId: CHANNEL_ID,
+      channelId: currentChannelId,
       channelProductId,
       channelBarcode: channelProductId,
       channelName,
@@ -293,7 +315,7 @@ async function confirmLineMapping(btn) {
   const response = await window.BuyBoxCommon.authFetch('/api/product-matching/confirm', {
     method: 'POST',
     body: JSON.stringify({
-      channelId: CHANNEL_ID,
+      channelId: currentChannelId,
       channelProductId,
       masterProductId,
       ensureChannelProduct: true,
@@ -321,7 +343,7 @@ async function submitBenimposSale() {
     const response = await window.BuyBoxCommon.authFetch('/api/benimpos/create-channel-sale', {
       method: 'POST',
       body: JSON.stringify({
-        channelId: CHANNEL_ID,
+        channelId: currentChannelId,
         orderNumber: currentOrder.orderNumber,
         days: currentDays,
         dryRun: false,

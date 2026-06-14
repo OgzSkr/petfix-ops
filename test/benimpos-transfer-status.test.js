@@ -68,6 +68,24 @@ test('computeBenimposTransferStatus returns ready when all lines are sale-allowe
   assert.equal(meta.benimposTransferStatus, 'ready');
 });
 
+test('computeBenimposTransferStatus returns transferred from order mapping log', () => {
+  const db = makeDb();
+  db.productMatching.orderMappingLogs.push({
+    action: 'benimpos_sale',
+    channelId: 'uber-eats',
+    orderNumber: '11321986580',
+    salesCode: '2606140032-DL'
+  });
+
+  const meta = computeBenimposTransferStatus(
+    { orderNumber: '11321986580', lines: [{ barcode: '5060412214117', quantity: 1 }] },
+    db,
+    'uber-eats'
+  );
+  assert.equal(meta.benimposTransferStatus, 'transferred');
+  assert.match(meta.benimposTransferNote, /2606140032-DL/);
+});
+
 test('computeBenimposTransferStatus ignores non-benimpos channels', () => {
   assert.equal(
     computeBenimposTransferStatus({ lines: [] }, makeDb(), 'trendyol-marketplace'),
