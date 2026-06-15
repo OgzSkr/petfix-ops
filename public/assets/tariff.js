@@ -4,6 +4,8 @@ const C = window.BuyBoxCommon;
 
 let commissionTariffMeta = { active: false };
 let TARIFF_ROWS = [];
+let TARIFF_ROWS_ALL = [];
+let tariffBaseSummary = null;
 let tariffCurrentPage = 1;
 let tariffPageSize = 25;
 let tariffZoomLevel = 100;
@@ -173,21 +175,18 @@ function bindTariffUi() {
   document.getElementById('tariffToggleImportBtn')?.addEventListener('click', toggleTariffImportPanel);
   document.getElementById('tariffFilters')?.addEventListener('submit', (event) => {
     event.preventDefault();
-    tariffCurrentPage = 1;
-    syncTariffQueryParams();
-    loadTariffAnalysis();
+    applyTariffFilters();
   });
   document.getElementById('tariffClearFiltersBtn')?.addEventListener('click', clearTariffFilters);
   document.getElementById('tariffSortBy')?.addEventListener('change', () => {
     tariffSortBy = document.getElementById('tariffSortBy')?.value || 'title';
-    tariffCurrentPage = 1;
-    loadTariffAnalysis();
+    applyTariffFilters();
   });
   document.getElementById('tariffSortDir')?.addEventListener('change', () => {
     tariffSortDir = document.getElementById('tariffSortDir')?.value || 'asc';
-    tariffCurrentPage = 1;
-    loadTariffAnalysis();
+    applyTariffFilters();
   });
+  bindTariffInstantFilters();
   document.getElementById('tariffAnalysisTable')?.addEventListener('click', handleTariffHeaderSort);
   document.getElementById('tariffBulkApplyBtn')?.addEventListener('click', applyTariffBulkPreset);
   document.getElementById('tariffExportBtn')?.addEventListener('click', exportCommissionTariff);
@@ -355,7 +354,7 @@ function handleTariffHeaderSort(event) {
   if (sortDirEl) sortDirEl.value = tariffSortDir;
 
   tariffCurrentPage = 1;
-  loadTariffAnalysis();
+  applyTariffFilters();
 }
 
 function updateTariffSortHeaders() {
@@ -412,6 +411,208 @@ function handleTariffZoom(event) {
   if (button.dataset.tariffZoom === 'in' && tariffZoomLevel < 120) tariffZoomLevel += 10;
   if (button.dataset.tariffZoom === 'out' && tariffZoomLevel > 80) tariffZoomLevel -= 10;
   applyTariffZoom();
+}
+
+function bindTariffInstantFilters() {
+  const instantInputIds = ['tariffFilterTitle', 'tariffFilterBarcode', 'tariffFilterModel'];
+  instantInputIds.forEach((id) => {
+    document.getElementById(id)?.addEventListener('input', () => applyTariffFilters());
+  });
+
+  const instantChangeIds = [
+    'tariffFilterCategory', 'tariffFilterBrand', 'tariffFilterProfit', 'tariffFilterRank',
+    'tariffFilterMinStock', 'tariffFilterMaxStock', 'tariffFilterSelectedOnly',
+    'tariffFilterMissingBuybox', 'tariffFilterWithBuybox', 'tariffFilterFetchableMissing',
+    'tariffFilterMissingUrl', 'tariffFilterMissingCost', 'tariffFilterLossRisk'
+  ];
+  instantChangeIds.forEach((id) => {
+    document.getElementById(id)?.addEventListener('change', () => applyTariffFilters());
+  });
+}
+
+function toTariffNum(value) {
+  if (value === '' || value === null || value === undefined) return null;
+  const n = Number(String(value).replace(',', '.'));
+  return Number.isFinite(n) ? n : null;
+}
+
+function tariffRankMatchesFilter(order, filter) {
+  const rank = Number(order);
+  if (!filter) return true;
+  if (!Number.isFinite(rank) || rank <= 0) return filter === '4+';
+  if (filter === '1') return rank === 1;
+  if (filter === '2-3') return rank >= 2 && rank <= 3;
+  if (filter === '4+') return rank >= 4;
+  return true;
+}
+
+function tariffSelectedTierCell(row) {
+  if (!row.selectedTier) return null;
+  return (row.tiers || []).find((tier) => tier.tier === row.selectedTier) || null;
+}
+
+function tariffRowHasMissingCost(row) {
+  if (row.buyboxProfitStatus === 'EKSIK_VERI') return true;
+  return (row.tiers || []).some((tier) => tier.status === 'EKSIK_VERI');
+}
+
+function tariffRowHasLossRisk(row) {
+  if (row.buyboxProfitStatus === 'ZARAR') return true;
+  const selected = tariffSelectedTierCell(row);
+  return selected?.status === 'ZARAR';
+}
+
+function tariffRowMatchesProfitFilter(row, profitFilter) {
+  if (!profitFilter || profitFilter === 'all') return true;
+  if (profitFilter === 'missing') return tariffRowHasMissingCost(row);
+  if (profitFilter === 'profit') {
+    if (row.buyboxProfitStatus === 'KAR') return true;
+    const selected = tariffSelectedTierCell(row);
+    return selected?.status === 'KAR';
+  }
+  if (profitFilter === 'loss') {
+    if (row.buyboxProfitStatus === 'ZARAR') return true;
+    const selected = tariffSelectedTierCell(row);
+    return selected?.status === 'ZARAR';
+  }
+  return true;
+}
+
+function getTariffFiltersFromDom() {
+  return {
+    title: document.getElementById('tariffFilterTitle')?.value?.trim() || '',
+    barcode: document.getElementById('tariffFilterBarcode')?.value?.trim() || '',
+    modelCode: document.getElementById('tariffFilterModel')?.value?.trim() || '',
+    category: document.getElementById('tariffFilterCategory')?.value || '',
+    brand: document.getElementById('tariffFilterBrand')?.value || '',
+    minStock: document.getElementById('tariffFilterMinStock')?.value ?? '',
+    maxStock: document.getElementById('tariffFilterMaxStock')?.value ?? '',
+    selectedOnly: Boolean(document.getElementById('tariffFilterSelectedOnly')?.checked),
+    missingBuybox: Boolean(document.getElementById('tariffFilterMissingBuybox')?.checked),
+    withBuybox: Boolean(document.getElementById('tariffFilterWithBuybox')?.checked),
+    fetchableMissing: Boolean(document.getElementById('tariffFilterFetchableMissing')?.checked),
+    missingUrl: Boolean(document.getElementById('tariffFilterMissingUrl')?.checked),
+    missingCost: Boolean(document.getElementById('tariffFilterMissingCost')?.checked),
+    lossRisk: Boolean(document.getElementById('tariffFilterLossRisk')?.checked),
+    buyboxRank: document.getElementById('tariffFilterRank')?.value || '',
+    profitFilter: document.getElementById('tariffFilterProfit')?.value || 'all'
+  };
+}
+
+function matchesTariffRow(row, filters) {
+  const title = String(filters.title || '').trim().toLocaleLowerCase('tr-TR');
+  const barcode = String(filters.barcode || '').trim();
+  const modelCode = String(filters.modelCode || '').trim().toLocaleLowerCase('tr-TR');
+  const category = String(filters.category || '').trim();
+  const brand = String(filters.brand || '').trim();
+  const minStock = filters.minStock === '' || filters.minStock === undefined ? null : Number(filters.minStock);
+  const maxStock = filters.maxStock === '' || filters.maxStock === undefined ? null : Number(filters.maxStock);
+
+  if (title && !String(row.title || '').toLocaleLowerCase('tr-TR').includes(title)) return false;
+  if (barcode && !String(row.barcode || '').includes(barcode)) return false;
+  if (modelCode && !String(row.modelCode || '').toLocaleLowerCase('tr-TR').includes(modelCode)) return false;
+  if (category && row.category !== category) return false;
+  if (brand && row.brand !== brand) return false;
+  if (minStock !== null && !Number.isNaN(minStock) && toTariffNum(row.stock) < minStock) return false;
+  if (maxStock !== null && !Number.isNaN(maxStock) && toTariffNum(row.stock) > maxStock) return false;
+  if (filters.selectedOnly && !row.selectedTier) return false;
+  if (filters.missingBuybox && row.buyboxPrice) return false;
+  if (filters.withBuybox && !toTariffNum(row.buyboxPrice)) return false;
+  if (filters.fetchableMissing && (toTariffNum(row.buyboxPrice) || !row.productUrl)) return false;
+  if (filters.missingUrl && row.productUrl) return false;
+  if (filters.buyboxRank && !tariffRankMatchesFilter(row.buyboxOrder, filters.buyboxRank)) return false;
+  if (filters.missingCost && !tariffRowHasMissingCost(row)) return false;
+  if (filters.lossRisk && !tariffRowHasLossRisk(row)) return false;
+  if (!tariffRowMatchesProfitFilter(row, filters.profitFilter)) return false;
+  return true;
+}
+
+function sortTariffRowsClient(rows, sortBy, sortDir) {
+  const dir = sortDir === 'desc' ? -1 : 1;
+  const sorted = rows.slice();
+
+  sorted.sort((a, b) => {
+    let av;
+    let bv;
+
+    switch (sortBy) {
+      case 'stock':
+        av = toTariffNum(a.stock);
+        bv = toTariffNum(b.stock);
+        break;
+      case 'currentTsf':
+        av = toTariffNum(a.currentTsf);
+        bv = toTariffNum(b.currentTsf);
+        break;
+      case 'buyboxOrder': {
+        const safe = (value) => {
+          const rank = Number(value);
+          return Number.isFinite(rank) && rank > 0 ? rank : 9999;
+        };
+        av = safe(a.buyboxOrder);
+        bv = safe(b.buyboxOrder);
+        break;
+      }
+      case 'buyboxPrice':
+        av = toTariffNum(a.buyboxPrice);
+        bv = toTariffNum(b.buyboxPrice);
+        break;
+      case 'buyboxNetProfit': {
+        const profitValue = (row) => {
+          const status = String(row.buyboxProfitStatus || '').toUpperCase();
+          if (status === 'KAR' || status === 'ZARAR') return toTariffNum(row.buyboxNetProfit);
+          return null;
+        };
+        av = profitValue(a);
+        bv = profitValue(b);
+        if (av === null && bv === null) {
+          return String(a.title || '').localeCompare(String(b.title || ''), 'tr');
+        }
+        if (av === null) return 1;
+        if (bv === null) return -1;
+        break;
+      }
+      case 'selectedTier':
+        av = toTariffNum(a.selectedTier) || 0;
+        bv = toTariffNum(b.selectedTier) || 0;
+        break;
+      case 'title':
+      default:
+        return dir * String(a.title || '').localeCompare(String(b.title || ''), 'tr');
+    }
+
+    if (av === bv) {
+      return String(a.title || '').localeCompare(String(b.title || ''), 'tr');
+    }
+    return av > bv ? dir : -dir;
+  });
+
+  return sorted;
+}
+
+function updateTariffRowInAll(barcode, patch) {
+  const apply = (list) => {
+    const idx = list.findIndex((item) => String(item.barcode) === String(barcode));
+    if (idx >= 0) list[idx] = { ...list[idx], ...patch };
+  };
+  apply(TARIFF_ROWS);
+  apply(TARIFF_ROWS_ALL);
+}
+
+function applyTariffFilters() {
+  tariffSortBy = document.getElementById('tariffSortBy')?.value || tariffSortBy || 'title';
+  tariffSortDir = document.getElementById('tariffSortDir')?.value || tariffSortDir || 'asc';
+  tariffCurrentPage = 1;
+  syncTariffQueryParams();
+
+  const filters = getTariffFiltersFromDom();
+  TARIFF_ROWS = sortTariffRowsClient(
+    TARIFF_ROWS_ALL.filter((row) => matchesTariffRow(row, filters)),
+    tariffSortBy,
+    tariffSortDir
+  );
+  updateTariffSortHeaders();
+  renderTariffViews();
 }
 
 function tariffFilterParams() {
@@ -488,7 +689,7 @@ function clearTariffFilters() {
   tariffSortDir = 'asc';
   tariffCurrentPage = 1;
   syncTariffQueryParams();
-  loadTariffAnalysis();
+  applyTariffFilters();
 }
 
 function renderTariffProfitPill(tierCell, detailMeta = null) {
@@ -1128,21 +1329,27 @@ async function pushProductPriceToTrendyol(button) {
 
 async function loadTariffAnalysis() {
   if (!commissionTariffMeta?.active) {
+    TARIFF_ROWS_ALL = [];
+    TARIFF_ROWS = [];
     updateTariffPanel();
     return;
   }
 
   try {
-    const response = await C.authFetch('/api/commission-tariff/analysis?' + tariffFilterParams().toString());
+    const params = new URLSearchParams();
+    params.set('profit', 'all');
+    params.set('sortBy', 'title');
+    params.set('sortDir', 'asc');
+    const response = await C.authFetch('/api/commission-tariff/analysis?' + params.toString());
     if (!response.ok) return;
     const payload = await response.json();
     commissionTariffMeta = payload.meta || commissionTariffMeta;
-    TARIFF_ROWS = payload.rows || [];
+    TARIFF_ROWS_ALL = payload.rows || [];
+    tariffBaseSummary = payload.summary || null;
     populateTariffFilterOptions(payload.filterOptions);
-    updateTariffCoverageBanner(payload.summary);
+    updateTariffCoverageBanner(tariffBaseSummary);
     updateTariffPanel();
-    syncTariffQueryParams();
-    renderTariffViews();
+    applyTariffFilters();
   } catch {
     // optional
   }
@@ -1175,18 +1382,18 @@ async function handleTariffTierSelect(event) {
       return;
     }
     commissionTariffMeta = { ...commissionTariffMeta, selectedCount: result.selectedCount || commissionTariffMeta.selectedCount };
-    const row = TARIFF_ROWS.find((item) => String(item.barcode) === String(barcode));
+    const row = TARIFF_ROWS_ALL.find((item) => String(item.barcode) === String(barcode));
     if (row) {
-      row.selectedTier = tier;
       const tierCell = (row.tiers || []).find((item) => Number(item.tier) === tier);
-      if (tierCell) {
-        row.selectedPrice = tierCell.referencePrice;
-        row.selectionProfit = tierCell.netProfit;
-        row.selectionProfitRate = tierCell.profitRate;
-      }
+      updateTariffRowInAll(barcode, {
+        selectedTier: tier,
+        selectedPrice: tierCell?.referencePrice,
+        selectionProfit: tierCell?.netProfit,
+        selectionProfitRate: tierCell?.profitRate
+      });
     }
     updateTariffPanel();
-    renderTariffViews();
+    applyTariffFilters();
   } catch (error) {
     showToast(error.message || 'Bağlantı hatası');
   }

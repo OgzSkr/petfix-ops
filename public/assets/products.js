@@ -11,9 +11,12 @@ const toastEl = document.getElementById('productsToast');
 const filterForm = document.getElementById('filterForm');
 
 let tableScale = 0.75;
-let productRows = [];
-let productsPageSize = 50;
+let allProductRows = [];
+let catalogTotal = 0;
+let catalogSummary = {};
+let productsPageSize = 10;
 let productsPage = 1;
+let productsFilteredTotal = 0;
 
 if (bootstrap.authRequired && !getStoredToken()) {
   redirectToLogin();
@@ -39,10 +42,21 @@ function applyInitialProductQuery() {
 function bindEvents() {
   filterForm.addEventListener('submit', (e) => {
     e.preventDefault();
-    loadProducts();
+    productsPage = 1;
+    renderFromCache();
+  });
+  filterForm.querySelectorAll('input').forEach((input) => {
+    input.addEventListener('input', () => {
+      productsPage = 1;
+      renderFromCache();
+    });
+    input.addEventListener('change', () => {
+      productsPage = 1;
+      renderFromCache();
+    });
   });
   document.getElementById('clearFilters').addEventListener('click', clearFilters);
-  document.getElementById('refreshData').addEventListener('click', loadProducts);
+  document.getElementById('refreshData').addEventListener('click', syncFromTrendyol);
   document.getElementById('exportCsv').addEventListener('click', exportCsv);
   document.getElementById('importExcel').addEventListener('click', () => document.getElementById('importExcelFile')?.click());
   document.getElementById('importExcelFile')?.addEventListener('change', importExcelFile);
@@ -102,28 +116,163 @@ function filtersToParams(filters) {
   return p;
 }
 
+function toNum(value) {
+  if (value === '' || value === null || value === undefined) return null;
+  const n = Number(String(value).replace(',', '.'));
+  return Number.isFinite(n) ? n : null;
+}
+
+function text(value) {
+  return String(value ?? '').trim();
+}
+
+function matchesProductFilter(row, filters) {
+  const title = text(filters.title).toLocaleLowerCase('tr-TR');
+  if (title && !String(row.title || '').toLocaleLowerCase('tr-TR').includes(title)) return false;
+
+  const barcode = text(filters.barcode);
+  if (barcode && !String(row.barcode || '').includes(barcode)) return false;
+
+  const brand = text(filters.brand).toLocaleLowerCase('tr-TR');
+  if (brand && !String(row.brand || '').toLocaleLowerCase('tr-TR').includes(brand)) return false;
+
+  const modelCode = text(filters.modelCode).toLocaleLowerCase('tr-TR');
+  if (modelCode && !String(row.modelCode || '').toLocaleLowerCase('tr-TR').includes(modelCode)) return false;
+
+  const color = text(filters.color).toLocaleLowerCase('tr-TR');
+  if (color && color !== '—' && !String(row.color || '').toLocaleLowerCase('tr-TR').includes(color)) return false;
+
+  const size = text(filters.size).toLocaleLowerCase('tr-TR');
+  if (size && size !== '—' && !String(row.size || '').toLocaleLowerCase('tr-TR').includes(size)) return false;
+
+  const costVatRate = text(filters.costVatRate);
+  if (costVatRate && String(row.costVatRate) !== costVatRate) return false;
+
+  if (filters.emptyCostOnly && row.hasCost) return false;
+
+  const stock = toNum(row.stock);
+  const stockMin = toNum(filters.stockMin);
+  const stockMax = toNum(filters.stockMax);
+  if (stockMin !== null && (stock === null || stock < stockMin)) return false;
+  if (stockMax !== null && (stock === null || stock > stockMax)) return false;
+
+  const cost = toNum(row.productCost);
+  const costMin = toNum(filters.costMin);
+  const costMax = toNum(filters.costMax);
+  if (costMin !== null && (cost === null || cost < costMin)) return false;
+  if (costMax !== null && (cost === null || cost > costMax)) return false;
+
+  const desi = toNum(row.desi);
+  const desiMin = toNum(filters.desiMin);
+  const desiMax = toNum(filters.desiMax);
+  if (desiMin !== null && (desi === null || desi < desiMin)) return false;
+  if (desiMax !== null && (desi === null || desi > desiMax)) return false;
+
+  const returnRate = toNum(row.returnRate);
+  const returnMin = toNum(filters.returnMin);
+  const returnMax = toNum(filters.returnMax);
+  if (returnMin !== null && (returnRate === null || returnRate < returnMin)) return false;
+  if (returnMax !== null && (returnRate === null || returnRate > returnMax)) return false;
+
+  return true;
+}
+
+function filteredProductRows() {
+  const filters = getFiltersFromForm();
+  return allProductRows.filter((row) => matchesProductFilter(row, filters));
+}
+
+function pageProductRows(rows) {
+  productsFilteredTotal = rows.length;
+  const totalPages = productsPageSize === 0
+    ? 1
+    : Math.max(1, Math.ceil(rows.length / productsPageSize));
+  if (productsPage > totalPages) productsPage = totalPages;
+  if (productsPage < 1) productsPage = 1;
+
+  if (productsPageSize === 0) return rows;
+  const start = (productsPage - 1) * productsPageSize;
+  return rows.slice(start, start + productsPageSize);
+}
+
 function clearFilters() {
   filterForm.reset();
-  loadProducts();
+  productsPage = 1;
+  renderFromCache();
+}
+
+function updateRowInCache(barcode, patch) {
+  const idx = allProductRows.findIndex((row) => String(row.barcode) === String(barcode));
+  if (idx >= 0) {
+    allProductRows[idx] = { ...allProductRows[idx], ...patch };
+  }
+}
+
+async function syncFromTrendyol() {
+  const button = document.getElementById('refreshData');
+  if (button) button.disabled = true;
+  showToast('Trendyol ürünleri çekiliyor…');
+
+  try {
+    const response = await authFetch('/api/products/sync-trendyol', {
+      method: 'POST',
+      body: JSON.stringify({})
+    });
+    const result = await response.json().catch(() => ({}));
+
+    if (!response.ok || result.ok === false) {
+      if (response.status === 404) {
+        showToast('Trendyol senkron henüz sunucuda yok — son kodu deploy edin (ops-deploy-vps.sh).');
+      } else {
+        showToast(result.error || result.message || 'Trendyol senkron başarısız.');
+      }
+      return;
+    }
+
+    await loadProducts();
+    showToast(result.message || 'Trendyol katalog güncellendi.');
+  } catch (error) {
+    showToast(error.message || 'Trendyol senkron bağlantı hatası.');
+  } finally {
+    if (button) button.disabled = false;
+  }
 }
 
 async function loadProducts() {
-  const params = filtersToParams(getFiltersFromForm());
+  const params = new URLSearchParams();
+  params.set('costScope', costScope);
+  params.set('limit', '0');
+
   const response = await authFetch('/api/products?' + params.toString());
   if (!response.ok) {
     showToast('Ürünler yüklenemedi.');
     return;
   }
   const data = await response.json();
-  productRows = data.rows || [];
+  allProductRows = data.rows || [];
+  catalogTotal = Number(data.total) || allProductRows.length;
+  catalogSummary = data.summary || {};
   productsPage = 1;
-  renderTable(productRows);
+  renderFromCache();
   updateProductsSummary(data);
-  footerEl.textContent = productRows.length + ' ürün listeleniyor (' + costScopeLabel + ', toplam ' + data.total + ')';
+}
+
+function renderFromCache() {
+  const filtered = filteredProductRows();
+  const pageRows = pageProductRows(filtered);
+  renderTable(pageRows);
+  updateProductsSummary({
+    summary: catalogSummary,
+    filtered: productsFilteredTotal,
+    total: catalogTotal
+  });
+  const shown = pageRows.length;
+  footerEl.textContent = shown + ' ürün gösteriliyor (' + productsFilteredTotal + ' filtre sonucu, '
+    + costScopeLabel + ' toplam ' + catalogTotal + ')';
 }
 
 function updateProductsSummary(data) {
-  const summary = data.summary || {};
+  const summary = data.summary || catalogSummary || {};
   const set = (id, value) => {
     const el = document.getElementById(id);
     if (el) el.textContent = String(value ?? '—');
@@ -131,7 +280,7 @@ function updateProductsSummary(data) {
   set('productsSummaryListed', summary.listed ?? '—');
   set('productsSummaryWithCost', summary.withCost ?? '—');
   set('productsSummaryEmptyCost', summary.emptyCost ?? '—');
-  set('productsSummaryFiltered', data.filtered ?? (data.rows || []).length);
+  set('productsSummaryFiltered', data.filtered ?? productsFilteredTotal);
 }
 
 function ensureProductsPagination() {
@@ -144,20 +293,20 @@ function ensureProductsPagination() {
   return bar;
 }
 
-function renderProductsPagination(total) {
+function renderProductsPagination() {
   const bar = ensureProductsPagination();
   if (!bar) return;
 
-  if (!total || total <= 25) {
+  if (!productsFilteredTotal || productsPageSize === 0 || productsFilteredTotal <= productsPageSize) {
     bar.innerHTML = '';
     bar.hidden = true;
     return;
   }
 
-  const totalPages = productsPageSize === 0 ? 1 : Math.max(1, Math.ceil(total / productsPageSize));
+  const totalPages = Math.max(1, dataTotalPages(productsFilteredTotal));
   if (productsPage > totalPages) productsPage = totalPages;
 
-  const sizeOptions = [25, 50, 100, 0].map((size) => {
+  const sizeOptions = [10, 25, 50, 100, 0].map((size) => {
     const label = size === 0 ? 'Tümü' : String(size);
     return '<option value="' + size + '"' + (size === productsPageSize ? ' selected' : '') + '>' + label + '</option>';
   }).join('');
@@ -176,23 +325,27 @@ function renderProductsPagination(total) {
   document.getElementById('productsPageSizeSelect')?.addEventListener('change', (e) => {
     productsPageSize = Number(e.target.value) || 0;
     productsPage = 1;
-    renderTable(productRows);
+    renderFromCache();
   });
   document.getElementById('productsPagePrev')?.addEventListener('click', () => {
     if (productsPage > 1) {
       productsPage -= 1;
-      renderTable(productRows);
+      renderFromCache();
     }
   });
   document.getElementById('productsPageNext')?.addEventListener('click', () => {
     productsPage += 1;
-    renderTable(productRows);
+    renderFromCache();
   });
+}
+
+function dataTotalPages(total) {
+  return productsPageSize === 0 ? 1 : Math.ceil(total / productsPageSize);
 }
 
 function renderTable(rows) {
   if (!rows.length) {
-    const colSpan = isChannelCostsPage ? 11 : 14;
+    const colSpan = isChannelCostsPage ? 7 : 10;
     tableBody.innerHTML =
       '<tr><td colspan="' + colSpan + '" class="products-empty">' +
         '<div class="products-empty-state">' +
@@ -201,16 +354,11 @@ function renderTable(rows) {
           '<span>Filtreleri temizleyerek tüm ürünleri görebilirsiniz.</span>' +
         '</div>' +
       '</td></tr>';
-    renderProductsPagination(0);
+    renderProductsPagination();
     return;
   }
 
-  const totalPages = productsPageSize === 0 ? 1 : Math.max(1, Math.ceil(rows.length / productsPageSize));
-  if (productsPage > totalPages) productsPage = totalPages;
-  const startIndex = productsPageSize === 0 ? 0 : (productsPage - 1) * productsPageSize;
-  const pageRows = productsPageSize === 0 ? rows : rows.slice(startIndex, startIndex + productsPageSize);
-
-  tableBody.innerHTML = pageRows.map(renderRow).join('');
+  tableBody.innerHTML = rows.map(renderRow).join('');
   tableBody.querySelectorAll('tr[data-barcode]').forEach(snapshotRow);
   tableBody.querySelectorAll('.copy-btn').forEach((btn) => {
     btn.addEventListener('click', (e) => {
@@ -218,22 +366,31 @@ function renderTable(rows) {
       navigator.clipboard.writeText(btn.dataset.barcode).then(() => showToast('Barkod kopyalandı'));
     });
   });
-  renderProductsPagination(rows.length);
+  renderProductsPagination();
+}
+
+function renderProductThumb(row) {
+  const src = row.imageUrl
+    ? escAttr(row.imageUrl)
+    : '/api/product-thumb-img?barcode=' + encodeURIComponent(row.barcode);
+  const img = '<img class="product-thumb" src="' + src + '" alt="" loading="lazy" onerror="this.classList.add(\'is-broken\');this.removeAttribute(\'src\');">';
+  const url = String(row.productUrl || '').trim();
+  if (url) {
+    return '<a href="' + escAttr(url) + '" target="_blank" rel="noopener">' + img + '</a>';
+  }
+  return img;
 }
 
 function renderRow(row) {
-  const thumb = row.productUrl
-    ? '<img class="product-thumb" src="" alt="" data-url="' + escAttr(row.productUrl) + '" onerror="this.classList.add(\'placeholder\');this.alt=\'Görsel\';">'
-    : '<div class="product-thumb placeholder">Görsel yok</div>';
+  const thumb = renderProductThumb(row);
   const link = row.productUrl
     ? '<a href="' + escAttr(row.productUrl) + '" target="_blank" rel="noopener">' + esc(row.title) + '</a>'
     : esc(row.title);
+  const subtitle = row.category ? '<small>' + esc(row.category) + '</small>' : '';
 
   return '<tr data-barcode="' + escAttr(row.barcode) + '">' +
-    '<td class="col-variant">' + esc(row.variantLabel) + '</td>' +
     '<td><div class="product-info">' + thumb +
-      '<div class="product-info-text">' + link +
-      '<small>' + esc(row.category) + ' · ' + esc(row.size) + '</small></div></div></td>' +
+      '<div class="product-info-text">' + link + subtitle + '</div></div></td>' +
     '<td><div class="barcode-cell"><span>' + esc(row.barcode) + '</span>' +
       '<button type="button" class="copy-btn" data-barcode="' + escAttr(row.barcode) + '" title="Kopyala">⧉</button></div></td>' +
     '<td class="col-cost"><div class="cost-edit-wrap">' +
@@ -241,12 +398,9 @@ function renderRow(row) {
       '<span class="currency-suffix">TRY</span>' +
       '<button type="button" class="row-save-btn" disabled title="Satır değişikliklerini kaydet">Güncelle</button>' +
     '</div></td>' +
-    '<td><input class="cell-input" data-field="costVatRate" data-save value="' + escAttr(row.costVatRate) + '"></td>' +
     '<td><input class="cell-input" data-field="desi" data-save value="' + escAttr(row.desi) + '"></td>' +
     '<td>' + esc(row.brand) + '</td>' +
     '<td><input class="cell-input wide" data-field="modelCode" data-save value="' + escAttr(row.modelCode === '—' ? '' : row.modelCode) + '"></td>' +
-    '<td><input class="cell-input" data-field="color" data-save value="' + escAttr(row.color === '—' ? '' : row.color) + '"></td>' +
-    '<td><input class="cell-input" data-field="size" data-save value="' + escAttr(row.size === '—' ? '' : row.size) + '"></td>' +
     '<td>' + esc(row.stock) + '</td>' +
     (isChannelCostsPage ? '' :
       '<td><span class="badge-return">' + esc(row.returnRateLabel) + '</span></td>' +
@@ -311,6 +465,15 @@ async function saveRow(tr) {
     if (!response.ok) throw new Error('Kayıt başarısız');
     snapshotRow(tr);
     tr.classList.remove('row-dirty');
+    const costNum = toNum(payload.productCost);
+    updateRowInCache(barcode, {
+      productCost: payload.productCost,
+      desi: payload.desi,
+      modelCode: payload.modelCode || '—',
+      deliveryType: payload.deliveryType,
+      extraExpense: payload.extraExpense,
+      hasCost: costNum !== null && costNum !== 0
+    });
     if (btn) {
       btn.classList.add('saved-flash');
       btn.textContent = 'Kaydedildi ✓';

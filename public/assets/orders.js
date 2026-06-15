@@ -36,6 +36,7 @@ const uberLossProductsPanel = document.getElementById('uberLossProductsPanel');
 const lossProductsBody = document.getElementById('lossProductsBody');
 const lossProductsFooter = document.getElementById('lossProductsFooter');
 const lossProductsSearch = document.getElementById('lossProductsSearch');
+const ordersSearch = document.getElementById('ordersSearch');
 const lossProductsIssuesOnly = document.getElementById('lossProductsIssuesOnly');
 const lossProductsUnmapAllBtn = document.getElementById('lossProductsUnmapAllBtn');
 const LOSS_PRODUCT_MATCHING_ISSUES = ['missing_master', 'barcode_conflict', 'review_required', 'pending', 'unmapped'];
@@ -156,16 +157,40 @@ let lastHzlMrktOpsChannels = null;
 let lastUpdatedAt = null;
 let lastFromCache = false;
 let lastCacheMeta = { skipped: false, cooldownSeconds: 0, message: '' };
-let ordersPageSize = 50;
+let ordersPageSize = 10;
 let ordersPage = 1;
-let activeLifecycleTab = 'completed';
+let activeLifecycleTab = 'active';
 
 const COL_COUNT = isOpsOrders ? 11 : (isMultiChannel ? 11 : 10);
 
-const COMPLETED_STATUSES = new Set([
-  'Delivered', 'DELIVERED', 'COMPLETED', 'completed', 'finished', 'Cancelled', 'CANCELLED',
-  'cancelled', 'CANCELED', 'Returned', 'UnDelivered', 'failed', 'delivered', 'PICKED_UP', 'CANCELLED'
-]);
+const TERMINAL_ORDER_STATUSES = new Set(
+  Array.isArray(bootstrap.terminalOrderStatusKeys) && bootstrap.terminalOrderStatusKeys.length
+    ? bootstrap.terminalOrderStatusKeys
+    : [
+      'DELIVERED', 'COMPLETED', 'FINISHED', 'CANCELLED', 'CANCELED', 'RETURNED', 'UNDELIVERED',
+      'FAILED', 'PICKED_UP', 'TESLIM EDILDI', 'TAMAMLANDI', 'IPTAL', 'TESLIM EDILEMEDI', 'IADE', 'BASARISIZ'
+    ]
+);
+
+function normalizeOrderStatusKey(status) {
+  const turkishFold = {
+    'ı': 'i',
+    'İ': 'i',
+    'ş': 's',
+    'Ş': 's',
+    'ğ': 'g',
+    'Ğ': 'g',
+    'ü': 'u',
+    'Ü': 'u',
+    'ö': 'o',
+    'Ö': 'o',
+    'ç': 'c',
+    'Ç': 'c'
+  };
+
+  const folded = [...String(status || '').trim()].map((ch) => turkishFold[ch] ?? ch).join('');
+  return folded.toUpperCase().replace(/\s+/g, ' ');
+}
 const qualityBannerEl = document.getElementById('ordersQualityBanner');
 const cacheBannerEl = document.getElementById('ordersCacheBanner');
 const matchingBannerEl = document.getElementById('ordersMatchingBanner');
@@ -266,11 +291,7 @@ function bindEvents() {
 
   document.getElementById('ordersLifecycleTabs')?.querySelectorAll('.orders-lifecycle-tab').forEach((btn) => {
     btn.addEventListener('click', () => {
-      activeLifecycleTab = btn.dataset.lifecycle || 'active';
-      document.querySelectorAll('.orders-lifecycle-tab').forEach((el) => {
-        el.classList.toggle('active', el === btn);
-        el.setAttribute('aria-selected', el === btn ? 'true' : 'false');
-      });
+      setActiveLifecycleTab(btn.dataset.lifecycle || 'active');
       ordersPage = 1;
       refreshView();
     });
@@ -282,6 +303,10 @@ function bindEvents() {
     });
   });
   lossProductsSearch?.addEventListener('input', renderLossProducts);
+  ordersSearch?.addEventListener('input', () => {
+    ordersPage = 1;
+    refreshView();
+  });
   lossProductsIssuesOnly?.addEventListener('change', renderLossProducts);
   lossProductsUnmapAllBtn?.addEventListener('click', unmapAllLossProducts);
   document.getElementById('orderModalClose').addEventListener('click', closeModal);
@@ -449,12 +474,35 @@ function clearFilters() {
   statusFilter.value = '';
   if (profitFilter) profitFilter.value = 'all';
   if (matchingFilter) matchingFilter.value = 'all';
+  if (ordersSearch) ordersSearch.value = '';
   syncQuickFilterButtons();
   syncMatchingQuickButtons();
   syncProfitQueryParam();
   syncMatchingQueryParam();
   setDefaultCustomDates();
   loadOrders();
+}
+
+function orderMatchesSearch(row, query) {
+  if (!query) return true;
+  const q = query.toLocaleLowerCase('tr-TR');
+  const parts = [
+    row.orderNumber,
+    row.customerName,
+    row.status,
+    row.channelId,
+    row.channelLabel,
+    row.paymentType,
+    row.deliveryType
+  ];
+  for (const line of row.lines || []) {
+    parts.push(line.title, line.productName, line.name, line.barcode, line.sku);
+  }
+  return parts
+    .filter(Boolean)
+    .join(' ')
+    .toLocaleLowerCase('tr-TR')
+    .includes(q);
 }
 
 function buildQueryParams() {
@@ -877,22 +925,31 @@ function updateLifecycleTabCounts() {
   if (completedEl) completedEl.textContent = completedCount ? '(' + completedCount + ')' : '';
 }
 
+function setActiveLifecycleTab(lifecycle) {
+  activeLifecycleTab = lifecycle === 'completed' ? 'completed' : 'active';
+  document.querySelectorAll('.orders-lifecycle-tab').forEach((el) => {
+    const selected = el.dataset.lifecycle === activeLifecycleTab;
+    el.classList.toggle('active', selected);
+    el.setAttribute('aria-selected', selected ? 'true' : 'false');
+  });
+}
+
 function pickLifecycleTabAfterLoad() {
   if (!isOpsOrders || !allRows.length) return;
   const activeCount = countLifecycleRows('active');
   const completedCount = countLifecycleRows('completed');
   if (activeLifecycleTab === 'active' && activeCount === 0 && completedCount > 0) {
-    activeLifecycleTab = 'completed';
-    document.querySelectorAll('.orders-lifecycle-tab').forEach((el) => {
-      const isCompleted = el.dataset.lifecycle === 'completed';
-      el.classList.toggle('active', isCompleted);
-      el.setAttribute('aria-selected', isCompleted ? 'true' : 'false');
-    });
+    setActiveLifecycleTab('completed');
+    return;
+  }
+  if (activeLifecycleTab === 'completed' && completedCount === 0 && activeCount > 0) {
+    setActiveLifecycleTab('active');
   }
 }
 
 function isOrderCompleted(row) {
-  return COMPLETED_STATUSES.has(String(row.status || '').trim());
+  const key = normalizeOrderStatusKey(row.status);
+  return key ? TERMINAL_ORDER_STATUSES.has(key) : false;
 }
 
 function filteredRows() {
@@ -915,6 +972,10 @@ function filteredRows() {
     if (matchingEnabled() && matching !== 'all') {
       rows = rows.filter((row) => orderMatchesMatchingFilter(row, matching));
     }
+  }
+  const searchQuery = String(ordersSearch?.value || '').trim();
+  if (searchQuery) {
+    rows = rows.filter((row) => orderMatchesSearch(row, searchQuery));
   }
   return rows;
 }
@@ -1524,7 +1585,7 @@ function renderOrdersPagination(total) {
   const bar = ensureOrdersPagination();
   if (!bar) return;
 
-  if (!total || total <= 25) {
+  if (!total || total <= 10) {
     bar.innerHTML = '';
     bar.hidden = true;
     return;
@@ -1533,7 +1594,7 @@ function renderOrdersPagination(total) {
   const totalPages = ordersPageSize === 0 ? 1 : Math.max(1, Math.ceil(total / ordersPageSize));
   if (ordersPage > totalPages) ordersPage = totalPages;
 
-  const sizeOptions = [25, 50, 100, 0].map((size) => {
+  const sizeOptions = [10, 25, 50, 100, 0].map((size) => {
     const label = size === 0 ? 'Tümü' : String(size);
     return '<option value="' + size + '"' + (size === ordersPageSize ? ' selected' : '') + '>' + label + '</option>';
   }).join('');

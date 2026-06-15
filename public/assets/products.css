@@ -249,6 +249,7 @@
   flex-shrink: 0;
 }
 
+.product-thumb.is-broken,
 .product-thumb.placeholder {
   display: grid;
   place-items: center;
@@ -256,6 +257,12 @@
   color: #9ca3af;
   text-align: center;
   padding: 4px;
+  min-width: 48px;
+  min-height: 48px;
+}
+
+.product-info a .product-thumb:hover {
+  opacity: 0.92;
 }
 
 .product-info-text a {

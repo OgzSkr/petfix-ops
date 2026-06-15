@@ -65,7 +65,9 @@ def read_workbook(path):
             if not target:
                 continue
 
-            target = target if target.startswith("xl/") else f"xl/{target}"
+            target = str(target or "").lstrip("/")
+            if not target.startswith("xl/"):
+                target = f"xl/{target}"
             sheets[name] = read_sheet(archive, target, shared_strings)
 
         return sheets
@@ -267,9 +269,68 @@ def map_profit_snapshots(rows):
     return snapshots
 
 
+def find_header_row(rows, marker="Barkod"):
+    for index, row in enumerate(rows):
+        if any(text(cell) == marker for cell in row):
+            return index, [text(value) for value in row]
+    return None, []
+
+
 def split_table(rows):
-    headers = [text(value) for value in (rows[0] if rows else [])]
-    return headers, rows[1:]
+    header_index, headers = find_header_row(rows)
+    if header_index is None:
+        headers = [text(value) for value in (rows[0] if rows else [])]
+        return headers, rows[1:]
+    return headers, rows[header_index + 1:]
+
+
+def map_urunler_settings(rows):
+    header_index, headers = find_header_row(rows)
+    if header_index is None:
+        return [], []
+
+    products = []
+    costs = []
+    data_rows = rows[header_index + 1:]
+
+    for row in data_rows:
+        item = by_header(headers, row)
+        barcode = clean_barcode(item.get("Barkod"))
+        if not barcode:
+            continue
+
+        products.append({
+            "barcode": barcode,
+            "sku": text(item.get("Stok kodu") or item.get("Stok Kodu")),
+            "title": text(item.get("Ürün Adı") or item.get("Urun adi")),
+            "brand": "",
+            "category": text(item.get("Kategori İsmi") or item.get("Kategori")),
+            "salePrice": number_or_blank(item.get("Trendyol  Satış Fiyatı") or item.get("Trendyol Satış Fiyatı")),
+            "listPrice": "",
+            "stock": number_or_blank(item.get("Stok")),
+            "status": "",
+            "productUrl": "",
+            "contentId": "",
+            "productMainId": text(item.get("Model Kodu")),
+            "variantId": "",
+            "commissionRate": "",
+            "updatedAt": now(),
+        })
+
+        costs.append({
+            "barcode": barcode,
+            "productCost": number_or_blank(
+                item.get("Ürün Maliyeti (KDV Dahil)")
+                or item.get("Ürün Maliyeti ( KDV Dahil)")
+            ),
+            "desi": number_or_blank(item.get("Ürün Desisi")),
+            "commissionRate": "",
+            "note": "",
+            "modelCode": text(item.get("Model Kodu")),
+            "updatedAt": now(),
+        })
+
+    return products, costs
 
 
 def by_header(headers, row):

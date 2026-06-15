@@ -35,16 +35,25 @@ def main():
         products_rows = sheet_rows(sheets, "Products")
         costs_rows = sheet_rows(sheets, "Maliyet Giris", "Maliyet Girişi", "Maliyet Girisi")
 
-        if not products_rows:
-            print(json.dumps({"ok": False, "error": "Products sekmesi bulunamadı."}))
-            sys.exit(1)
-
-        payload = {
-            "ok": True,
-            "products": MODULE.map_products(products_rows),
-            "costs": MODULE.map_costs(costs_rows),
-            "buyboxSnapshots": MODULE.map_buybox_snapshots(products_rows)
-        }
+        if products_rows:
+            payload = {
+                "ok": True,
+                "products": MODULE.map_products(products_rows),
+                "costs": MODULE.map_costs(costs_rows),
+                "buyboxSnapshots": MODULE.map_buybox_snapshots(products_rows)
+            }
+        else:
+            urunler_rows = sheet_rows(sheets, "Ürünler", "Urunler")
+            if not urunler_rows:
+                print(json.dumps({"ok": False, "error": "Products veya Ürünler sekmesi bulunamadı."}))
+                sys.exit(1)
+            products, costs = MODULE.map_urunler_settings(urunler_rows)
+            payload = {
+                "ok": True,
+                "products": products,
+                "costs": costs,
+                "buyboxSnapshots": []
+            }
         print(json.dumps(payload, ensure_ascii=False))
     except Exception as error:
         print(json.dumps({"ok": False, "error": str(error)}, ensure_ascii=False))
