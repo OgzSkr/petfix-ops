@@ -8,8 +8,9 @@ const isChannelPage = Boolean(bootstrap.channelId);
 const isEmbeddedChannel = isChannelPage && !isMultiChannel;
 const ORDERS_API = bootstrap.apiPath || '/api/orders';
 const ORDERS_EXPORT_API = bootstrap.exportPath || '/api/orders/export';
+const DEFAULT_ORDERS_DAYS = isOpsOrders ? '14' : '1';
 const channelLabel = bootstrap.channelLabel || 'Trendyol Pazaryeri';
-const MARKETNEXT_CHANNEL_ROUTES = {
+const HZLMRKTOPS_CHANNEL_ROUTES = {
   'uber-eats': '/hzlmrktops/siparisler',
   'yemeksepeti': '/hzlmrktops/siparisler',
   getir: '/hzlmrktops/siparisler'
@@ -142,7 +143,7 @@ let tableScale = 0.9;
 let allRows = [];
 let fetchedCount = 0;
 let activeRange = { startMs: 0, endMs: 0 };
-let activeDays = 14;
+let activeDays = 1;
 let chartMode = 'day';
 let sortKey = 'orderDateMs';
 let sortDir = 'desc';
@@ -225,8 +226,12 @@ function applyInitialQueryParams() {
     orderDeepLinkHandled = false;
   }
   const days = params.get('days');
-  if (days && daysSelect && ['7', '14', '30', '60', '1'].includes(days)) {
-    daysSelect.value = days;
+  if (daysSelect) {
+    if (days && ['7', '14', '30', '60', '1'].includes(days)) {
+      daysSelect.value = days;
+    } else {
+      daysSelect.value = DEFAULT_ORDERS_DAYS;
+    }
     toggleCustomDates();
   }
   const matching = params.get('matching');
@@ -340,7 +345,7 @@ function bindEvents() {
   const logoutBtn = document.getElementById('logoutBtn');
   if (logoutBtn) logoutBtn.addEventListener('click', logout);
 
-  const channelFilterRoot = document.getElementById('marketnextChannelFilters');
+  const channelFilterRoot = document.getElementById('hzlmrktopsChannelFilters');
   if (channelFilterRoot) {
     channelFilterRoot.querySelectorAll('[data-channel]').forEach((btn) => {
       btn.addEventListener('click', () => {
@@ -470,7 +475,7 @@ function syncOrderQueryParam(orderNumber) {
 }
 
 function clearFilters() {
-  daysSelect.value = '14';
+  daysSelect.value = DEFAULT_ORDERS_DAYS;
   statusFilter.value = '';
   if (profitFilter) profitFilter.value = 'all';
   if (matchingFilter) matchingFilter.value = 'all';
@@ -511,7 +516,7 @@ function buildQueryParams() {
     if (startDateInput.value) params.set('startDate', startDateInput.value);
     if (endDateInput.value) params.set('endDate', endDateInput.value);
   } else {
-    params.set('days', daysSelect.value || '14');
+    params.set('days', daysSelect.value || DEFAULT_ORDERS_DAYS);
   }
   if (isMultiChannel && activeChannelFilter !== 'all') {
     params.set('channel', activeChannelFilter);
@@ -520,7 +525,7 @@ function buildQueryParams() {
 }
 
 function syncChannelFilterTabs() {
-  const channelFilterRoot = document.getElementById('marketnextChannelFilters');
+  const channelFilterRoot = document.getElementById('hzlmrktopsChannelFilters');
   if (!channelFilterRoot) return;
   channelFilterRoot.querySelectorAll('[data-channel]').forEach((btn) => {
     const active = (btn.dataset.channel || 'all') === activeChannelFilter;
@@ -531,7 +536,7 @@ function syncChannelFilterTabs() {
 
 function hydrateChannelFilterLogos() {
   if (!isMultiChannel) return;
-  const root = document.getElementById('marketnextChannelFilters');
+  const root = document.getElementById('hzlmrktopsChannelFilters');
   const logos = channelLogos();
   if (!root || !logos?.render) return;
   root.querySelectorAll('button[data-channel]').forEach((btn) => {
@@ -563,7 +568,7 @@ function channelLogos() {
 function renderChannelCell(row) {
   const channelId = row.channel || row.channelId || '';
   const label = row.channelLabel || channelId || '—';
-  const route = MARKETNEXT_CHANNEL_ROUTES[channelId];
+  const route = HZLMRKTOPS_CHANNEL_ROUTES[channelId];
   const logos = channelLogos();
   const logo = channelId && logos?.render
     ? logos.render(channelId, { size: isOpsOrders ? 'sm' : 'xs' })
@@ -605,10 +610,29 @@ function formatElapsedMinutes(timestamp) {
 
 function formatOpsPhone(row) {
   const phone = String(row.customerPhone || '').trim();
-  if (!phone) return '—';
-  const orderNo = String(row.orderNumber || '').trim();
-  if (orderNo && !phone.includes(orderNo)) return phone + ' - ' + orderNo;
-  return phone;
+  return phone || '—';
+}
+
+function isOpsOrderDelivered(row) {
+  const status = String(row.status || '').trim();
+  const normalized = status.toLowerCase();
+  if (['delivered', 'completed', 'picked_up', 'finished', 'teslim edildi', 'tamamlandı'].includes(normalized)) {
+    return true;
+  }
+  return ['Delivered', 'COMPLETED', 'DELIVERED', 'PICKED_UP'].includes(status);
+}
+
+function formatOpsDeliveryDate(row) {
+  if (row.deliveredAtMs) return formatOpsDate(row.deliveredAtMs);
+  if (isOpsOrderDelivered(row)) return '—';
+  return 'Henüz teslim edilmedi';
+}
+
+function opsSettlementChannelLabel(channelId) {
+  if (channelId === 'uber-eats') return 'Trendyol Go';
+  if (channelId === 'yemeksepeti') return 'Yemeksepeti';
+  if (channelId === 'getir') return 'Getir';
+  return 'Kanal';
 }
 
 function renderMultiChannelSourceNote(data) {
@@ -631,7 +655,7 @@ function renderMultiChannelSourceNote(data) {
 
 function updateChannelTabCounts(channelsMeta) {
   if (!isMultiChannel) return;
-  const root = document.getElementById('marketnextChannelFilters');
+  const root = document.getElementById('hzlmrktopsChannelFilters');
   if (!root) return;
 
   let allCount = 0;
@@ -812,6 +836,12 @@ function translateStatus(status) {
     accepted: 'Kabul edildi',
     delivered: 'Teslim edildi',
     finished: 'Tamamlandı',
+    Yolda: 'Yolda',
+    Yeni: 'Yeni',
+    Hazırlanıyor: 'Hazırlanıyor',
+    Faturalandı: 'Faturalandı',
+    'Teslim edilemedi': 'Teslim edilemedi',
+    İade: 'İade',
     failed: 'Başarısız'
   };
   return map[status] || status;
@@ -875,6 +905,11 @@ function refreshView(meta) {
   if (isMultiChannel && !isOpsOrders) renderMultiChannelSourceNote({ channels: lastHzlMrktOpsChannels || [] });
   if (isOpsOrders) {
     updateLifecycleTabCounts();
+    const activeCount = countLifecycleRows('active');
+    const completedCount = countLifecycleRows('completed');
+    if (activeLifecycleTab === 'active' && activeCount === 0 && completedCount > 0) {
+      setActiveLifecycleTab('completed');
+    }
   }
   tryOpenPendingOrder();
 }
@@ -938,11 +973,11 @@ function pickLifecycleTabAfterLoad() {
   if (!isOpsOrders || !allRows.length) return;
   const activeCount = countLifecycleRows('active');
   const completedCount = countLifecycleRows('completed');
-  if (activeLifecycleTab === 'active' && activeCount === 0 && completedCount > 0) {
+  if (activeCount === 0 && completedCount > 0) {
     setActiveLifecycleTab('completed');
     return;
   }
-  if (activeLifecycleTab === 'completed' && completedCount === 0 && activeCount > 0) {
+  if (completedCount === 0 && activeCount > 0) {
     setActiveLifecycleTab('active');
   }
 }
@@ -1639,16 +1674,21 @@ function renderTable() {
   if (!rows.length) {
     renderOrdersPagination(0);
     const hasActiveFilter = (statusFilter && statusFilter.value) ||
+      (ordersSearch && String(ordersSearch.value || '').trim()) ||
+      (isOpsOrders && activeLifecycleTab === 'active' && countLifecycleRows('completed') > 0) ||
       (!isOpsOrders && profitFilter && profitFilter.value !== 'all') ||
       (!isOpsOrders && matchingFilter && matchingFilter.value !== 'all');
+    const emptyHint = hasActiveFilter
+      ? (isOpsOrders && activeLifecycleTab === 'active' && countLifecycleRows('completed') > 0
+        ? 'Getir siparişleri çoğunlukla tamamlanmış — «Tamamlanmış Siparişler» sekmesine geçin.'
+        : 'Filtreleri temizleyerek tüm siparişleri görebilirsiniz.')
+      : 'Tarih aralığını genişletmeyi (ör. Son 14 gün) veya «Verileri Güncelle» ile yeniden çekmeyi deneyin.';
     tableBody.innerHTML =
       '<tr><td colspan="' + COL_COUNT + '" class="orders-empty">' +
         '<div class="orders-empty-state">' +
           '<span class="orders-empty-icon" aria-hidden="true">📭</span>' +
           '<strong>' + (hasActiveFilter ? 'Filtrelere uyan sipariş yok' : 'Bu dönemde sipariş yok') + '</strong>' +
-          '<span>' + (hasActiveFilter
-            ? 'Filtreleri temizleyerek tüm siparişleri görebilirsiniz.'
-            : 'Tarih aralığını genişletmeyi veya "Verileri Güncelle" ile yeniden çekmeyi deneyin.') + '</span>' +
+          '<span>' + emptyHint + '</span>' +
           (hasActiveFilter ? '<button type="button" class="btn-ghost orders-empty-clear" id="ordersEmptyClearBtn">Filtreleri Temizle</button>' : '') +
         '</div>' +
       '</td></tr>';
@@ -1837,11 +1877,11 @@ function openOpsDetail(index) {
   const channelBlock = renderOpsChannelBlock(channelId, logos, row.channelLabel);
 
   modalBody.innerHTML =
-    '<div class="ops-detail-layout ops-detail-layout--marketnext">' +
+    '<div class="ops-detail-layout ops-detail-layout--hzlmrktops">' +
       '<section class="ops-detail-section ops-detail-section--products">' +
         '<h4>Ürün Bilgileri</h4>' +
         renderOpsLineItems(row.lines, channelId) +
-        renderOpsOrderTotalsFooter(totals) +
+        renderOpsOrderTotalsFooter(totals, channelId) +
         renderOpsBenimposActions(row) +
       '</section>' +
       '<div class="ops-detail-side">' +
@@ -1852,7 +1892,7 @@ function openOpsDetail(index) {
             detailItem('TC Kimlik No', row.customerIdentityNumber || '—') +
             detailItem('Telefon', formatOpsPhone(row)) +
             detailItem('Adres', row.customerAddress || '—') +
-            detailItem('Tarif', row.customerNote || row.deliveryNote || '—') +
+            detailItem('Müşteri notu', row.customerNote || '—') +
           '</dl>' +
         '</section>' +
         '<section class="ops-detail-section">' +
@@ -1871,7 +1911,7 @@ function openOpsDetail(index) {
             detailItem('Ödeme Yöntemi', row.paymentMethod || 'Online') +
             detailItem('Not', row.orderNote || '—') +
             detailItem('Sipariş Tarihi', formatOpsDate(row.orderDateMs)) +
-            detailItem('Teslim Tarihi', formatOpsDate(row.deliveredAtMs || row.orderDateMs)) +
+            detailItem('Teslim Tarihi', formatOpsDeliveryDate(row)) +
             renderOpsBenimposTransferDetail(row) +
           '</dl>' +
         '</section>' +
@@ -1931,26 +1971,80 @@ function renderOpsBenimposTransferDetail(row) {
 }
 
 function opsOrderTotals(row, lines) {
+  const portal = row.portalFinancials;
+  if (portal?.loaded) {
+    return {
+      basket: Number(portal.price) || 0,
+      discount: Number(portal.discount) || 0,
+      campaignAmount: Number(portal.campaignAmount) || 0,
+      bagFee: Number(portal.bagFee) || 0,
+      commission: Number(portal.commission) || 0,
+      orderCommission: Number(portal.orderCommission) || 0,
+      commissionRate: portal.commissionRate ?? null,
+      courierFee: Number(portal.courierFee ?? portal.deliveryFee) || 0,
+      fixedDistribution: Number(portal.fixedDistribution) || 0,
+      totalDeductions: Number(portal.totalDeductions) || 0,
+      withholdingRate: portal.withholdingRate ?? null,
+      withholdingAmount: Number(portal.withholdingAmount) || 0,
+      partialRefund: Number(portal.partialRefund) || 0,
+      deliveryFee: Number(portal.deliveryFee) || 0,
+      provision: Number(portal.provision) || 0,
+      total: Math.max(0, Number(portal.price) - Number(portal.discount)),
+      netHakedis: Number(portal.netEarning) || 0,
+      settlementLoaded: true
+    };
+  }
+
   const items = Array.isArray(lines) ? lines : [];
   const lineSum = items.reduce((sum, line) => sum + (Number(line.lineSalesAmount) || 0), 0);
   const basket = lineSum > 0
     ? lineSum
     : Number(row.packageGrossAmount || row.salesAmount) || 0;
   const discount = Number(row.packageTotalDiscount) || 0;
-  const commission = Number(row.commissionAmount) || items.reduce(
-    (sum, line) => sum + (Number(line.commissionAmount) || 0),
+  const lineCommission = items.reduce(
+    (sum, line) => sum + (Number(line.portalCommissionAmount ?? line.saleCommissionAmount ?? line.commissionAmount) || 0),
     0
   );
+  const commission = Number(row.packagePortalCommissionAmount) || lineCommission || Number(row.commissionAmount) || 0;
+  const provisionNet = row.packageProvisionNet != null && row.packageProvisionNet !== ''
+    ? Number(row.packageProvisionNet)
+    : (Number(row.packageProvisionAmount) || 0);
+  const sellerRevenue = Number(row.packageSellerRevenue) || 0;
+  const discountSellerRevenue = Number(row.packageDiscountSellerRevenue) || 0;
   const total = discount > 0
     ? Math.max(0, basket - discount)
     : Number(row.salesAmount || basket) || 0;
-  const netHakedis = commission > 0
-    ? Math.max(0, basket - discount - commission)
-    : null;
-  return { basket, discount, commission, total, netHakedis };
+  let netHakedis = null;
+  if (sellerRevenue > 0 && discountSellerRevenue > 0) {
+    netHakedis = Math.max(0, sellerRevenue - discountSellerRevenue - provisionNet);
+  } else if (commission > 0) {
+    netHakedis = Math.max(0, basket - discount - commission - provisionNet);
+  }
+  return {
+    basket,
+    discount,
+    commission,
+    commissionRate: null,
+    partialRefund: Number(row.packagePartialRefund) || 0,
+    deliveryFee: Number(row.packageDeliveryFee) || 0,
+    provision: Number(row.portalProvisionCredit ?? row.packageProvisionAmount) || 0,
+    total,
+    netHakedis,
+    settlementLoaded: false
+  };
 }
 
-function renderOpsOrderTotalsFooter(totals) {
+function renderOpsOrderTotalsFooter(totals, channelId = '') {
+  if (totals.settlementLoaded) {
+    return renderOpsPortalFinancialsFooter(totals, channelId);
+  }
+
+  const channelLabel = opsSettlementChannelLabel(channelId);
+  const settlementNote = channelId === 'uber-eats' || channelId === 'yemeksepeti' || channelId === 'getir'
+    ? '<p class="muted ops-detail-settlement-note">' + esc(channelLabel) +
+      ' gider özeti henüz yüklenmedi; komisyon ve net hakediş tahmini olabilir.</p>'
+    : '';
+
   const discountRow = totals.discount > 0
     ? '<div class="ops-detail-total-row ops-detail-total-row--discount">' +
         '<span>İndirim</span><strong>-' + formatMoney(totals.discount) + ' ₺</strong>' +
@@ -1979,15 +2073,50 @@ function renderOpsOrderTotalsFooter(totals) {
       : '<div class="ops-detail-total-row ops-detail-total-row--grand">' +
           '<span>TOPLAM</span><strong>' + formatMoney(totals.total) + ' ₺</strong>' +
         '</div>') +
+    settlementNote +
+  '</div>';
+}
+
+function renderOpsPortalFinancialsFooter(totals, channelId = '') {
+  const channelLabel = opsSettlementChannelLabel(channelId);
+  const commissionRate = totals.commissionRate != null
+    ? '<span class="ops-portal-rate">%' + formatMoney(totals.commissionRate) + '</span>'
+    : '';
+  const rows = [
+    ['Fiyat', formatMoney(totals.basket) + ' ₺', ''],
+    totals.discount > 0 ? ['Kampanya / İndirim', '-' + formatMoney(totals.discount) + ' ₺', 'is-deduct'] : null,
+    totals.bagFee > 0 ? ['Poşet', formatMoney(totals.bagFee) + ' ₺', ''] : null,
+    totals.commission > 0 ? ['Komisyon', '-' + formatMoney(totals.commission) + ' ₺', 'is-deduct', commissionRate] : null,
+    totals.courierFee > 0 ? ['Kurye', '-' + formatMoney(totals.courierFee) + ' ₺', 'is-deduct'] : null,
+    totals.fixedDistribution > 0 ? ['Sabit dağıtım', '-' + formatMoney(totals.fixedDistribution) + ' ₺', 'is-deduct'] : null,
+    totals.partialRefund > 0 ? ['Kısmi İade', '-' + formatMoney(totals.partialRefund) + ' ₺', 'is-deduct'] : null,
+    totals.deliveryFee > 0 && !totals.courierFee ? ['Teslimat Ücreti', '-' + formatMoney(totals.deliveryFee) + ' ₺', 'is-deduct'] : null,
+    totals.provision !== 0 ? ['Provizyon', (totals.provision > 0 ? '+' : '-') + formatMoney(Math.abs(totals.provision)) + ' ₺', totals.provision > 0 ? 'is-credit' : 'is-deduct'] : null,
+    totals.withholdingAmount > 0 ? ['Stopaj', '-' + formatMoney(totals.withholdingAmount) + ' ₺', 'is-deduct'] : null,
+    totals.netHakedis != null ? ['İşletme alacağı', formatMoney(totals.netHakedis) + ' ₺', 'is-net'] : null
+  ].filter(Boolean);
+
+  const sourceNote = channelId === 'getir'
+    ? 'Kaynak: Getir Finansal Hareketler / delivered API (komisyon, kurye, stopaj).'
+    : 'Kaynak: ' + esc(channelLabel) + ' cari ekstre (fiyat, indirim, iade, provizyon).';
+
+  return '<div class="ops-portal-financials">' +
+    '<div class="ops-portal-financials-head">' + esc(channelLabel) + ' gider özeti</div>' +
+    '<table class="ops-portal-financials-table"><tbody>' +
+    rows.map((row) =>
+      '<tr><th>' + esc(row[0]) + '</th><td class="' + escAttr(row[2] || '') + '">' +
+        '<strong>' + row[1] + '</strong>' + (row[3] || '') +
+      '</td></tr>'
+    ).join('') +
+    '</tbody></table>' +
+    '<p class="muted ops-detail-settlement-note">' + sourceNote + '</p>' +
   '</div>';
 }
 
 function renderOpsChannelBlock(channelId, logos, fallbackLabel) {
   if (!logos?.render) return esc(fallbackLabel || '—');
   const visual = logos.getVisual?.(channelId) || {};
-  const label = channelId === 'uber-eats'
-    ? 'Trendyol Go'
-    : (visual.label || fallbackLabel || channelId || '—');
+  const label = visual.label || fallbackLabel || channelId || '—';
   return '<span class="ops-channel-inline">' +
     logos.render(channelId, { size: 'sm' }) +
     '<span class="ops-channel-label">' + esc(label) + '</span>' +
@@ -2056,7 +2185,7 @@ function renderOpsLineItems(lines, channelId) {
   }).join('');
 
   return '<div class="ops-products-wrap">' +
-    '<table class="ops-products-table ops-products-table--marketnext">' +
+    '<table class="ops-products-table ops-products-table--hzlmrktops">' +
       '<thead><tr>' +
         '<th>Ürün</th><th>Marka</th><th>Birim Fiyat</th><th>Miktar</th><th>Toplam Fiyat</th>' +
       '</tr></thead>' +
@@ -2308,7 +2437,7 @@ async function exportReport() {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = (isMultiChannel ? 'marketnext' : (bootstrap.channelId || 'siparis')) + '-karlilik.csv';
+  a.download = (isMultiChannel ? 'hzlmrktops' : (bootstrap.channelId || 'siparis')) + '-karlilik.csv';
   a.click();
   URL.revokeObjectURL(url);
   showToast('Rapor indirildi.');

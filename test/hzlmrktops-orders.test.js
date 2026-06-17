@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createMarketNextOrdersService } from '../lib/platform/services/marketnext-orders.js';
+import { createHzlMrktOpsOrdersService } from '../lib/platform/services/hzlmrktops-orders.js';
 
-test('listMarketNextOrders merges active channel rows and stats', async () => {
+test('listHzlMrktOpsOrders merges active channel rows and stats', async () => {
   const channelOrders = {
     async listChannelOrders(channelId) {
       if (channelId === 'uber-eats') {
@@ -47,18 +47,18 @@ test('listMarketNextOrders merges active channel rows and stats', async () => {
     }
   };
 
-  const service = createMarketNextOrdersService({ channelOrders });
+  const service = createHzlMrktOpsOrdersService({ channelOrders });
   const params = new URLSearchParams({ days: '14' });
-  const result = await service.listMarketNextOrders(params);
+  const result = await service.listHzlMrktOpsOrders(params);
 
-  assert.equal(result.channel, 'marketnext');
+  assert.equal(result.channel, 'hzlmrktops');
   assert.ok(result.rows.length >= 2, 'expected merged uber + yemeksepeti rows');
   assert.equal(result.rows[0].orderNumber, 'U-1');
   assert.ok(Array.isArray(result.channels));
   assert.ok(result.stats.count >= 2);
 });
 
-test('listMarketNextOrders respects channel filter', async () => {
+test('listHzlMrktOpsOrders respects channel filter', async () => {
   const channelOrders = {
     async listChannelOrders(channelId) {
       return {
@@ -73,9 +73,9 @@ test('listMarketNextOrders respects channel filter', async () => {
     }
   };
 
-  const service = createMarketNextOrdersService({ channelOrders });
+  const service = createHzlMrktOpsOrdersService({ channelOrders });
   const params = new URLSearchParams({ days: '14', channel: 'uber-eats' });
-  const result = await service.listMarketNextOrders(params);
+  const result = await service.listHzlMrktOpsOrders(params);
 
   assert.equal(result.channelFilter, 'uber-eats');
   assert.ok(result.rows.every((row) => row.orderNumber === 'U-only'));
