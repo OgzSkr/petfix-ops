@@ -14,6 +14,7 @@ window.BuyBoxCommon = {
 
   logout() {
     sessionStorage.removeItem(this.TOKEN_KEY);
+    fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' }).catch(() => {});
     this.redirectToLogin();
   },
 

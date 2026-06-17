@@ -25,6 +25,7 @@ async function validateToken(token) {
   const response = await fetch('/api/auth/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'same-origin',
     body: JSON.stringify({ token })
   });
   const result = await response.json().catch(() => ({}));

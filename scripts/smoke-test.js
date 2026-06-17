@@ -39,6 +39,32 @@ async function check(name, url, expectStatus = 200, options = {}) {
   return response;
 }
 
+function cookieHeaderFromLogin(response) {
+  const raw = response.headers.getSetCookie?.() || [];
+  if (raw.length) {
+    return raw.map((entry) => entry.split(';')[0]).join('; ');
+  }
+  const single = response.headers.get('set-cookie');
+  if (!single) return '';
+  return single.split(';')[0];
+}
+
+async function loginWithCookie(token) {
+  const response = await fetch(`${base}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token })
+  });
+  if (response.status !== 200) {
+    throw new Error(`auth login: expected 200, got ${response.status}`);
+  }
+  const cookie = cookieHeaderFromLogin(response);
+  if (!cookie) {
+    throw new Error('auth login: Set-Cookie missing');
+  }
+  return { headers: { Authorization: `Bearer ${token}`, Cookie: cookie } };
+}
+
 async function main() {
   const checks = [];
 
@@ -61,19 +87,65 @@ async function main() {
   await check('webhook health', `${base}/webhooks/v1/health`);
   checks.push('webhook-health');
 
-  await check('ops picking page', `${base}/ops/`);
-  checks.push('ops-picking-page');
+  await check('hzlmrktops siparisler page', `${base}/hzlmrktops/siparisler`);
+  checks.push('hzlmrktops-siparisler-page');
 
-  await check('ops integrations page', `${base}/ops/integrations/`);
-  checks.push('ops-integrations-page');
+  await check('hzlmrktops integrations page', `${base}/hzlmrktops/integrations`);
+  checks.push('hzlmrktops-integrations-page');
 
   await check('dashboard without token', `${base}/api/dashboard`, 401);
   checks.push('dashboard-auth-block');
 
   if (token) {
     const headers = { Authorization: `Bearer ${token}` };
+    const session = await loginWithCookie(token);
+    const sessionHeaders = session.headers;
+    checks.push('auth-login-cookie');
+
     await check('dashboard with token', `${base}/api/dashboard`, 200, { headers });
     checks.push('dashboard-auth-ok');
+
+    await check('hzlmrktops orders api', `${base}/api/hzlmrktops/orders?days=1`, 200, { headers });
+    const hzOrders = await (await fetch(`${base}/api/hzlmrktops/orders?days=1`, { headers })).json();
+    if (!Array.isArray(hzOrders.rows) || typeof hzOrders.total !== 'number') {
+      throw new Error('hzlmrktops orders: missing rows/total');
+    }
+    checks.push('hzlmrktops-orders-list');
+
+    const getirOrdersRes = await fetch(`${base}/api/hzlmrktops/orders?days=14&channel=getir`, { headers });
+    if (getirOrdersRes.status !== 200) {
+      throw new Error(`getir channel orders: expected 200, got ${getirOrdersRes.status}`);
+    }
+    const getirOrders = await getirOrdersRes.json();
+    if (!Array.isArray(getirOrders.rows)) {
+      throw new Error('getir channel orders: missing rows');
+    }
+    checks.push('getir-channel-orders-api');
+
+    const thumbDenied = await fetch(`${base}/api/product-thumb-img?barcode=8690000000001`);
+    if (thumbDenied.status !== 401) {
+      throw new Error(`product-thumb-img unauth: expected 401, got ${thumbDenied.status}`);
+    }
+    checks.push('product-thumb-img-auth-block');
+
+    const thumbAuthed = await fetch(`${base}/api/product-thumb-img?barcode=8690000000001`, {
+      headers: sessionHeaders,
+      redirect: 'manual'
+    });
+    if (thumbAuthed.status !== 302 && thumbAuthed.status !== 404) {
+      throw new Error(`product-thumb-img authed: expected 302 or 404, got ${thumbAuthed.status}`);
+    }
+    checks.push('product-thumb-img-auth-ok');
+
+    const badJsonRes = await fetch(`${base}/api/products/save`, {
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: '{ invalid'
+    });
+    if (badJsonRes.status !== 400) {
+      throw new Error(`invalid json body: expected 400, got ${badJsonRes.status}`);
+    }
+    checks.push('invalid-json-400');
 
     await check('buybox analytics', `${base}/api/buybox/analytics?days=7`, 200, { headers });
     checks.push('buybox-analytics');
@@ -151,6 +223,14 @@ async function main() {
     await check('channels summary', `${base}/api/dashboard/channels-summary?days=14`, 200, { headers });
     checks.push('channels-summary');
 
+    await check(
+      'live performance api',
+      `${base}/api/dashboard/live-performance?days=1&channel=trendyol-marketplace`,
+      200,
+      { headers }
+    );
+    checks.push('live-performance-api');
+
     await check('uber eats settings', `${base}/api/uber-eats-settings`, 200, { headers });
     checks.push('uber-eats-settings');
 
@@ -186,6 +266,12 @@ async function main() {
 
   await check('commission tariff page', `${base}/marketplace/trendyol`);
   checks.push('marketplace-trendyol-page');
+
+  await check('live performance page', `${base}/marketplace/live-performance`);
+  checks.push('marketplace-live-performance-page');
+
+  await check('live performance asset', `${base}/assets/live-performance.js`);
+  checks.push('live-performance-asset');
 
   await check('shipping page', `${base}/marketplace/shipping`);
   checks.push('marketplace-shipping-page');

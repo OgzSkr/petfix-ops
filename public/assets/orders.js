@@ -8,7 +8,7 @@ const isChannelPage = Boolean(bootstrap.channelId);
 const isEmbeddedChannel = isChannelPage && !isMultiChannel;
 const ORDERS_API = bootstrap.apiPath || '/api/orders';
 const ORDERS_EXPORT_API = bootstrap.exportPath || '/api/orders/export';
-const DEFAULT_ORDERS_DAYS = isOpsOrders ? '14' : '1';
+const DEFAULT_ORDERS_DAYS = '1';
 const channelLabel = bootstrap.channelLabel || 'Trendyol Pazaryeri';
 const HZLMRKTOPS_CHANNEL_ROUTES = {
   'uber-eats': '/hzlmrktops/siparisler',
@@ -251,6 +251,8 @@ function applyInitialQueryParams() {
   syncMatchingQuickButtons();
 }
 
+let ordersSearchTimer = null;
+
 function bindEvents() {
   filterForm.addEventListener('submit', (e) => {
     e.preventDefault();
@@ -310,7 +312,8 @@ function bindEvents() {
   lossProductsSearch?.addEventListener('input', renderLossProducts);
   ordersSearch?.addEventListener('input', () => {
     ordersPage = 1;
-    refreshView();
+    clearTimeout(ordersSearchTimer);
+    ordersSearchTimer = setTimeout(() => refreshView(), 200);
   });
   lossProductsIssuesOnly?.addEventListener('change', renderLossProducts);
   lossProductsUnmapAllBtn?.addEventListener('click', unmapAllLossProducts);
@@ -776,9 +779,9 @@ async function loadOrders(forceRefresh = false) {
       showToast(toast);
     }
   } catch (error) {
-    tableBody.innerHTML = '<tr><td colspan="' + COL_COUNT + '" class="orders-loading">' + esc(error.message) + '</td></tr>';
+    tableBody.innerHTML = '<tr><td colspan="' + COL_COUNT + '" class="orders-error">' + esc(error.message) + '</td></tr>';
     if (lossProductsBody) {
-      lossProductsBody.innerHTML = '<tr><td colspan="10" class="orders-loading">' + esc(error.message) + '</td></tr>';
+      lossProductsBody.innerHTML = '<tr><td colspan="10" class="orders-error">' + esc(error.message) + '</td></tr>';
     }
     footerEl.textContent = 'Yüklenemedi: ' + error.message;
     if (isEmbeddedChannel) {
@@ -1682,7 +1685,7 @@ function renderTable() {
       ? (isOpsOrders && activeLifecycleTab === 'active' && countLifecycleRows('completed') > 0
         ? 'Getir siparişleri çoğunlukla tamamlanmış — «Tamamlanmış Siparişler» sekmesine geçin.'
         : 'Filtreleri temizleyerek tüm siparişleri görebilirsiniz.')
-      : 'Tarih aralığını genişletmeyi (ör. Son 14 gün) veya «Verileri Güncelle» ile yeniden çekmeyi deneyin.';
+      : 'Tarih aralığını genişletmeyi veya «Verileri Güncelle» ile yeniden çekmeyi deneyin.';
     tableBody.innerHTML =
       '<tr><td colspan="' + COL_COUNT + '" class="orders-empty">' +
         '<div class="orders-empty-state">' +

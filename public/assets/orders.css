@@ -870,6 +870,14 @@
   color: #6b7280;
 }
 
+.orders-error {
+  padding: 40px;
+  text-align: center;
+  color: #b91c1c;
+  background: #fef2f2;
+  font-weight: 500;
+}
+
 .detail-actions {
   margin-top: 16px;
   padding-top: 12px;
@@ -1698,13 +1706,13 @@
   gap: 16px;
   align-items: start;
 }
-.ops-detail-layout--marketnext .ops-detail-section--products {
+.ops-detail-layout--hzlmrktops .ops-detail-section--products {
   background: #fff;
   border-color: #e5e7eb;
   padding: 0;
   overflow: hidden;
 }
-.ops-detail-layout--marketnext .ops-detail-section--products h4 {
+.ops-detail-layout--hzlmrktops .ops-detail-section--products h4 {
   padding: 14px 16px 0;
   margin-bottom: 10px;
 }
@@ -1777,14 +1785,14 @@
   border-collapse: collapse;
   font-size: 0.82rem;
 }
-.ops-products-table--marketnext th,
-.ops-products-table--marketnext td {
+.ops-products-table--hzlmrktops th,
+.ops-products-table--hzlmrktops td {
   border: 1px solid #eef2f7;
   padding: 10px 12px;
   text-align: left;
   vertical-align: middle;
 }
-.ops-products-table--marketnext th {
+.ops-products-table--hzlmrktops th {
   background: #f8fafc;
   font-size: 0.72rem;
   font-weight: 700;
@@ -1792,7 +1800,7 @@
   color: #64748b;
   letter-spacing: 0.03em;
 }
-.ops-products-table--marketnext tbody tr:hover {
+.ops-products-table--hzlmrktops tbody tr:hover {
   background: #fafafa;
 }
 .ops-product-row {
@@ -1889,6 +1897,55 @@
 .ops-detail-total-row--net strong {
   color: #047857;
   font-size: 1.05rem;
+}
+.ops-portal-financials {
+  margin-top: 0;
+  padding: 12px 16px 14px;
+  border-top: 1px solid #e5e7eb;
+  background: #fff;
+}
+.ops-portal-financials-head {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #64748b;
+  margin-bottom: 8px;
+}
+.ops-portal-financials-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.84rem;
+}
+.ops-portal-financials-table th {
+  text-align: left;
+  color: #64748b;
+  font-weight: 500;
+  padding: 4px 0;
+}
+.ops-portal-financials-table td {
+  text-align: right;
+  padding: 4px 0;
+}
+.ops-portal-financials-table td.is-deduct strong {
+  color: #dc2626;
+}
+.ops-portal-financials-table td.is-credit strong {
+  color: #047857;
+}
+.ops-portal-financials-table td.is-net strong {
+  color: #047857;
+  font-size: 1.05rem;
+}
+.ops-portal-rate {
+  margin-left: 6px;
+  color: #64748b;
+  font-size: 0.78rem;
+  font-weight: 500;
+}
+.ops-detail-settlement-note {
+  margin: 8px 0 0;
+  font-size: 0.75rem;
 }
 .ops-detail-actions--benimpos {
   margin-top: 16px;
