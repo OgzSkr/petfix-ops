@@ -5,7 +5,7 @@
   const common = window.BuyBoxCommon;
 
   const DISPLAY_CHANNELS = [
-    { id: 'getir', pushChannel: null, planned: true },
+    { id: 'getir', pushChannel: 'getir', planned: false },
     { id: 'uber-eats', pushChannel: 'trendyol_go', planned: false },
     { id: 'yemeksepeti', pushChannel: 'yemeksepeti', planned: false }
   ];
@@ -15,6 +15,16 @@
     diff: 'Fark Var',
     'no-stock': 'Stok Yok',
     waiting: 'Bekliyor'
+  };
+
+  const MATCHING_STATUS_LABELS = {
+    unmapped: 'Eşleşmemiş',
+    missing_master: 'BenimPOS\'ta yok',
+    auto_matched: 'Otomatik öneri',
+    pending: 'Onay bekliyor',
+    review_required: 'İnceleme gerekli',
+    barcode_conflict: 'Çoklu aday',
+    manual_confirmed: 'Eşleştirildi'
   };
 
   const ORPHAN_STATUS_LABELS = {
@@ -37,6 +47,8 @@
   const pendingChannelPriceUpdates = new Map();
   let brandOptions = [];
   let viewMode = 'masters';
+  let matchingRowsCache = [];
+  let matchingSafeConfirmable = null;
 
   const state = {
     q: '',
@@ -44,7 +56,9 @@
     channelFocus: '',
     channelSaleStatus: '',
     syncStatus: '',
-    stock: ''
+    stock: '',
+    matchStatus: '',
+    confirmableOnly: ''
   };
 
   const els = {};
@@ -65,6 +79,71 @@
     const n = Number(value);
     if (!Number.isFinite(n)) return '—';
     return `₺${n.toFixed(2).replace('.', ',')}`;
+  }
+
+  function isMatchingView() {
+    return viewMode === 'matching';
+  }
+
+  function confidenceTone(score) {
+    const n = Number(score);
+    if (!Number.isFinite(n)) return 'neutral';
+    if (n >= 85) return 'high';
+    if (n >= 60) return 'medium';
+    return 'low';
+  }
+
+  function renderChannelImage(row) {
+    const imageUrl = String(row.channelImageUrl || '').trim();
+    if (imageUrl) {
+      return `<img class="bp-match-thumb" src="${escAttr(imageUrl)}" alt="" width="56" height="56" loading="lazy" onerror="this.classList.add('bp-match-thumb--empty'); this.removeAttribute('src');">`;
+    }
+    const barcode = String(row.channelBarcode || row.linkedMasterBarcode || '').trim();
+    if (barcode) {
+      return `<img class="bp-match-thumb" src="/api/product-thumb-img?barcode=${escAttr(barcode)}" alt="" width="56" height="56" loading="lazy" onerror="this.classList.add('bp-match-thumb--empty'); this.removeAttribute('src');">`;
+    }
+    return '<span class="bp-match-thumb bp-match-thumb--empty" aria-hidden="true"></span>';
+  }
+
+  function renderMasterSuggestion(row) {
+    if (!row.suggestedMasterProductId) {
+      return '<span class="bp-match-empty">Öneri yok</span>';
+    }
+    const barcode = String(row.linkedMasterBarcode || '').trim();
+    const thumb = barcode
+      ? `<img class="bp-match-thumb bp-match-thumb--sm" src="/api/product-thumb-img?barcode=${escAttr(barcode)}" alt="" width="36" height="36" loading="lazy" onerror="this.classList.add('bp-match-thumb--empty'); this.removeAttribute('src');">`
+      : '<span class="bp-match-thumb bp-match-thumb--sm bp-match-thumb--empty" aria-hidden="true"></span>';
+    return `<div class="bp-match-suggest">
+      ${thumb}
+      <div>
+        <div class="bp-match-suggest-name">${esc(row.suggestedMasterName || '—')}</div>
+        <div class="bp-match-suggest-meta">${esc(barcode || row.suggestedMasterProductId || '')}</div>
+        ${row.suggestionReason ? `<div class="bp-match-suggest-reason">${esc(row.suggestionReason)}</div>` : ''}
+      </div>
+    </div>`;
+  }
+
+  function renderMatchingStatusBadge(status) {
+    const label = MATCHING_STATUS_LABELS[status] || status || '—';
+    const cls = status === 'manual_confirmed' ? 'ready'
+      : status === 'auto_matched' ? 'waiting'
+        : status === 'barcode_conflict' ? 'diff'
+          : status === 'missing_master' ? 'no-stock'
+            : 'waiting';
+    return `<span class="bp-status-badge ${cls}">${esc(label)}</span>`;
+  }
+
+  function renderConfidenceBadge(score) {
+    const tone = confidenceTone(score);
+    const text = Number.isFinite(Number(score)) ? `%${Math.round(Number(score))}` : '—';
+    return `<span class="bp-confidence bp-confidence--${tone}">${esc(text)}</span>`;
+  }
+
+  function renderChannelBadge(channelId, label) {
+    const logo = window.PetFixChannelLogos?.render
+      ? window.PetFixChannelLogos.render(channelId, { size: 'sm' })
+      : esc(label || channelId);
+    return `<span class="bp-channel-badge">${logo}<span>${esc(label || channelLabel(channelId))}</span></span>`;
   }
 
   function formatPosStock(value) {
@@ -340,7 +419,7 @@
   }
 
   function tableColspan() {
-    return viewMode === 'orphans' ? 4 : 9;
+    return isMatchingView() ? 10 : 9;
   }
 
   function channelLabel(channelId) {
@@ -353,12 +432,18 @@
 
   function updateTableHead() {
     if (!els.tableHead) return;
-    if (viewMode === 'orphans') {
+    if (isMatchingView()) {
       els.tableHead.innerHTML = `<tr>
-        <th class="bp-col-product" scope="col">Kanal ürünü</th>
-        <th scope="col">Barkod</th>
-        <th scope="col">Kanal fiyat</th>
-        <th class="bp-col-status" scope="col">Durum</th>
+        <th class="bp-col-thumb" scope="col">Görsel</th>
+        <th class="bp-col-product" scope="col">Kanal ürün adı</th>
+        <th scope="col">Marka</th>
+        <th scope="col">Barkod / SKU</th>
+        <th scope="col">Kanal</th>
+        <th scope="col">Kanal fiyatı</th>
+        <th scope="col">Eşleşme durumu</th>
+        <th scope="col">Önerilen BenimPOS ürünü</th>
+        <th scope="col">Güven</th>
+        <th class="bp-col-actions" scope="col">İşlemler</th>
       </tr>`;
       return;
     }
@@ -381,25 +466,25 @@
   }
 
   function setFilterPanelMode() {
-    const orphan = viewMode === 'orphans';
-    document.body.classList.toggle('bp-orphan-view', orphan);
-    if (els.brand) els.brand.hidden = orphan;
-    if (els.channelSale) els.channelSale.hidden = orphan;
-    if (els.statusFilter) els.statusFilter.hidden = orphan;
-    if (els.stock) els.stock.hidden = orphan;
-    if (els.selectAllWrap) els.selectAllWrap.hidden = orphan;
-    if (orphan && !state.channelFocus) {
-      state.channelFocus = 'uber-eats';
-      if (els.channel) els.channel.value = state.channelFocus;
-    }
+    const matching = isMatchingView();
+    document.body.classList.toggle('bp-matching-view', matching);
+    document.body.classList.toggle('bp-orphan-view', matching);
+    if (els.brand) els.brand.hidden = matching;
+    if (els.channelSale) els.channelSale.hidden = matching;
+    if (els.statusFilter) els.statusFilter.hidden = matching;
+    if (els.stock) els.stock.hidden = matching;
+    if (els.matchStatus) els.matchStatus.hidden = !matching;
+    if (els.confirmable) els.confirmable.hidden = !matching;
+    if (els.selectAllWrap) els.selectAllWrap.hidden = matching;
+    if (els.exportBtn) els.exportBtn.hidden = matching;
+    if (els.matchingToolbar) els.matchingToolbar.hidden = !matching;
     if (els.channel) {
-      els.channel.querySelector('option[value=""]')?.toggleAttribute('disabled', orphan);
-      if (orphan && !state.channelFocus) els.channel.value = 'uber-eats';
+      els.channel.querySelector('option[value=""]')?.toggleAttribute('disabled', false);
     }
   }
 
   function setViewMode(nextView) {
-    viewMode = nextView === 'orphans' ? 'orphans' : 'masters';
+    viewMode = nextView === 'matching' || nextView === 'orphans' ? 'matching' : 'masters';
     document.querySelectorAll('.bp-view-tab').forEach((node) => {
       node.classList.toggle('is-active', node.getAttribute('data-view') === viewMode);
     });
@@ -411,80 +496,175 @@
     loadProducts();
   }
 
-  function orphanChannelPrice(row) {
-    const price = Number(row.lastUnitPrice) || Number(row.channelPrice);
-    return Number.isFinite(price) && price > 0 ? price : null;
-  }
-
-  function renderOrphanRows(rows) {
-    rowsCache = rows;
+  function renderMatchingRows(rows) {
+    matchingRowsCache = rows;
+    rowsCache = [];
     if (!rows.length) {
-      const hint = state.channelFocus
-        ? 'Bu kanalda BenimPOS\'ta karşılığı olmayan ürün yok — veya önce «TGO Katalog» / «YS Katalog» ile listeyi güncelleyin.'
-        : 'Kanal seçin (Trendyol GO veya Yemeksepeti).';
+      const hint = 'Eşleştirme bekleyen kanal ürünü bulunamadı. Önce katalog sync çalıştırın veya filtreleri gevşetin.';
       els.body.innerHTML = `<tr><td colspan="${tableColspan()}" class="bp-empty">${hint}</td></tr>`;
       return;
     }
 
     els.body.innerHTML = rows.map((row) => {
+      const key = `${row.channelId}:${row.channelProductId}`;
       const barcode = String(row.channelBarcode || '').trim();
-      const name = String(row.channelDisplayName || row.channelName || '—').trim();
-      const status = ORPHAN_STATUS_LABELS[row.mappingStatus] || row.mappingStatus || '—';
-      return `<tr>
+      const sku = String(row.channelSku || row.channelStockCode || row.channelProductId || '').trim();
+      const brand = String(row.channelBrand || '').trim() || '—';
+      const price = Number(row.salePrice);
+      const canConfirm = Boolean(row.canConfirm && row.suggestedMasterProductId);
+      return `<tr data-match-key="${escAttr(key)}" data-channel="${escAttr(row.channelId)}" data-channel-product="${escAttr(row.channelProductId)}">
+        <td class="bp-col-thumb">${renderChannelImage(row)}</td>
         <td class="bp-col-product">
-          <div class="bp-product-name">${esc(name)}</div>
-          <div class="bp-product-meta">${esc(channelLabel(row.channelId))}</div>
+          <div class="bp-match-product bp-match-product--text">
+            <div>
+              <div class="bp-product-name">${esc(row.channelName || '—')}</div>
+              ${row.systemComment ? `<div class="bp-product-meta">${esc(row.systemComment)}</div>` : ''}
+            </div>
+          </div>
         </td>
+        <td>${esc(brand)}</td>
         <td>
-          <span class="bp-barcode">
-            <span>${esc(barcode || '—')}</span>
-            ${barcode ? `<button type="button" class="bp-copy-btn" data-copy-barcode="${escAttr(barcode)}" title="Kopyala">⧉</button>` : ''}
-          </span>
+          <div class="bp-code-stack">
+            <span class="bp-barcode"><span>${esc(barcode || '—')}</span>${barcode ? `<button type="button" class="bp-copy-btn" data-copy-barcode="${escAttr(barcode)}" title="Kopyala">⧉</button>` : ''}</span>
+            <span class="bp-sku">${esc(sku || '—')}</span>
+          </div>
         </td>
-        <td class="bp-num">${formatMoney(orphanChannelPrice(row))}</td>
-        <td class="bp-col-status"><span class="bp-status-badge waiting">${esc(status)}</span></td>
+        <td>${renderChannelBadge(row.channelId, row.channelLabel)}</td>
+        <td class="bp-num">${formatMoney(Number.isFinite(price) && price > 0 ? price : null)}</td>
+        <td>${renderMatchingStatusBadge(row.mappingStatus)}</td>
+        <td>${renderMasterSuggestion(row)}</td>
+        <td>${renderConfidenceBadge(row.confidenceScore)}</td>
+        <td class="bp-col-actions">
+          <div class="bp-match-actions">
+            <button type="button" class="bp-btn bp-btn-primary bp-btn-xs" data-confirm-match="${escAttr(key)}" ${canConfirm ? '' : 'disabled'} title="Öneriyi onayla">Eşleştir</button>
+            <button type="button" class="bp-btn bp-btn-ghost bp-btn-xs" data-search-master="${escAttr(key)}" title="BenimPOS ürünü ara">Ara</button>
+          </div>
+        </td>
       </tr>`;
     }).join('');
   }
 
-  async function loadOrphanProducts() {
-    const channelId = state.channelFocus;
-    if (!channelId || channelId === 'getir') {
-      total = 0;
-      totalPages = 1;
-      renderOrphanRows([]);
-      if (els.totalMeta) els.totalMeta.textContent = 'Kanal seçin';
-      updateFilterSummary(null);
-      if (!channelId) setStatus('BenimPOS\'ta olmayan ürünler için kanal seçin.', true);
-      else setStatus('Getir henüz desteklenmiyor.', true);
+  function findMatchingRow(key) {
+    return matchingRowsCache.find((row) => `${row.channelId}:${row.channelProductId}` === key) || null;
+  }
+
+  async function confirmMatchRow(row) {
+    if (!row?.suggestedMasterProductId) {
+      notifyUser('Onaylanabilir öneri yok — BenimPOS ürünü arayın.', 'warn');
       return;
     }
+    if (row.masterLinkConflict) {
+      notifyUser('Çoklu aday var — manuel seçim gerekli.', 'warn');
+      return;
+    }
+    setStatus('Eşleştirme kaydediliyor…');
+    await apiPost('/api/product-matching/confirm', {
+      channelId: row.channelId,
+      channelProductId: row.channelProductId,
+      masterProductId: row.suggestedMasterProductId,
+      confirmedBy: 'matching_center'
+    });
+    notifyUser(`${row.channelName || 'Ürün'} eşleştirildi.`, 'success');
+    await loadProducts({ silent: true });
+  }
 
-    const params = buildOrphanQueryParams();
-    const response = await authFetch(`/api/product-matching/channel-products?${params}`);
+  async function openMasterSearchModal(row) {
+    if (!row) return;
+    const initial = String(row.suggestedMasterName || row.channelName || '').trim().slice(0, 40);
+    let selectedMasterId = row.suggestedMasterProductId || '';
+
+    openModal({
+      title: 'BenimPOS ürünü seç',
+      lead: `${row.channelName || 'Kanal ürünü'} için ana ürün arayın.`,
+      bodyHtml: `<label class="bp-modal-field" for="bpMasterSearchInput">Ara</label>
+        <input type="search" id="bpMasterSearchInput" class="bp-search" value="${escAttr(initial)}" autocomplete="off">
+        <div class="bp-master-search-results" id="bpMasterSearchResults"></div>`,
+      confirmLabel: 'Seçili ürünü eşleştir',
+      onOpen: () => {
+        const input = document.getElementById('bpMasterSearchInput');
+        const resultsEl = document.getElementById('bpMasterSearchResults');
+
+        async function renderResults(query) {
+          const response = await authFetch(`/api/product-matching/search-masters?q=${encodeURIComponent(query || '')}`);
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+          const items = data.rows || [];
+          if (!items.length) {
+            resultsEl.innerHTML = '<p class="bp-empty-inline">Sonuç bulunamadı.</p>';
+            return;
+          }
+          resultsEl.innerHTML = items.map((item) => {
+            const active = item.id === selectedMasterId ? ' is-active' : '';
+            return `<button type="button" class="bp-master-pick${active}" data-master-id="${escAttr(item.id)}">
+              <img class="bp-match-thumb bp-match-thumb--sm" src="/api/product-thumb-img?barcode=${escAttr(item.benimposBarcode || '')}" alt="" width="36" height="36" loading="lazy" onerror="this.classList.add('bp-match-thumb--empty'); this.removeAttribute('src');">
+              <span>
+                <strong>${esc(item.name || '—')}</strong>
+                <small>${esc(item.benimposBarcode || '')}</small>
+              </span>
+            </button>`;
+          }).join('');
+        }
+
+        input?.addEventListener('input', () => {
+          renderResults(input.value).catch((error) => {
+            resultsEl.innerHTML = `<p class="bp-empty-inline">${esc(error.message)}</p>`;
+          });
+        });
+        resultsEl?.addEventListener('click', (event) => {
+          const btn = event.target.closest('[data-master-id]');
+          if (!btn) return;
+          selectedMasterId = btn.getAttribute('data-master-id') || '';
+          resultsEl.querySelectorAll('[data-master-id]').forEach((node) => {
+            node.classList.toggle('is-active', node.getAttribute('data-master-id') === selectedMasterId);
+          });
+        });
+
+        renderResults(initial).catch((error) => {
+          resultsEl.innerHTML = `<p class="bp-empty-inline">${esc(error.message)}</p>`;
+        });
+      },
+      onConfirm: async () => {
+        if (!selectedMasterId) throw new Error('BenimPOS ürünü seçin.');
+        await apiPost('/api/product-matching/confirm', {
+          channelId: row.channelId,
+          channelProductId: row.channelProductId,
+          masterProductId: selectedMasterId,
+          confirmedBy: 'matching_center_manual'
+        });
+        notifyUser('Manuel eşleştirme kaydedildi.', 'success');
+        await loadProducts({ silent: true });
+      }
+    });
+  }
+
+  function buildMatchingQueryParams() {
+    const params = new URLSearchParams({
+      page: String(page),
+      limit: String(limit),
+      queue: 'action'
+    });
+    if (state.q) params.set('q', state.q);
+    if (state.channelFocus) params.set('channelId', state.channelFocus);
+    if (state.matchStatus) params.set('status', state.matchStatus);
+    if (state.confirmableOnly === '1') params.set('quality', 'confirmable');
+    return params;
+  }
+
+  async function loadMatchingCenter() {
+    const response = await authFetch(`/api/product-matching/workbench?${buildMatchingQueryParams()}`);
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
 
     total = Number(data.total) || 0;
     totalPages = Math.max(1, Number(data.totalPages) || 1);
     page = Math.min(page, totalPages);
-    renderOrphanRows(data.rows || []);
+    renderMatchingRows(data.rows || []);
     renderPagination();
+    matchingSafeConfirmable = data.summary?.safeConfirmable ?? null;
     if (els.totalMeta) {
-      els.totalMeta.textContent = `Gösterilen ${(data.rows || []).length} / ${Number(total).toLocaleString('tr-TR')} kanal ürünü`;
+      els.totalMeta.textContent = `Gösterilen ${(data.rows || []).length} / ${Number(total).toLocaleString('tr-TR')} eşleştirme`;
+      updateFilterSummary(data.summary?.filtered ?? total);
     }
-    updateFilterSummary(null);
-  }
-
-  function buildOrphanQueryParams() {
-    const params = new URLSearchParams({
-      channelId: state.channelFocus,
-      withoutMaster: '1',
-      page: String(page),
-      limit: String(limit)
-    });
-    if (state.q) params.set('q', state.q);
-    return params;
   }
 
   function buildQueryParams() {
@@ -514,18 +694,23 @@
     if (state.channelSaleStatus) count += 1;
     if (state.syncStatus) count += 1;
     if (state.stock) count += 1;
+    if (state.matchStatus) count += 1;
+    if (state.confirmableOnly) count += 1;
     return count;
   }
 
   function syncFiltersToUrl() {
     const params = new URLSearchParams();
-    if (viewMode === 'orphans') params.set('view', 'orphans');
+    if (isMatchingView()) params.set('view', 'matching');
     if (state.q) params.set('q', state.q);
     if (viewMode === 'masters') {
       if (state.brand) params.set('brand', state.brand);
       if (state.channelSaleStatus) params.set('channelSale', state.channelSaleStatus);
       if (state.syncStatus) params.set('status', state.syncStatus);
       if (state.stock) params.set('stock', state.stock);
+    } else {
+      if (state.matchStatus) params.set('matchStatus', state.matchStatus);
+      if (state.confirmableOnly === '1') params.set('confirmable', '1');
     }
     if (state.channelFocus) params.set('channel', state.channelFocus);
     if (page > 1) params.set('page', String(page));
@@ -537,13 +722,16 @@
 
   function readFiltersFromUrl() {
     const params = new URLSearchParams(window.location.search);
-    viewMode = params.get('view') === 'orphans' ? 'orphans' : 'masters';
+    const view = params.get('view');
+    viewMode = view === 'matching' || view === 'orphans' ? 'matching' : 'masters';
     state.q = params.get('q') || '';
     state.brand = params.get('brand') || '';
     state.channelFocus = params.get('channel') || params.get('channelFocus') || '';
     state.channelSaleStatus = params.get('channelSale') || params.get('channelSaleStatus') || '';
     state.syncStatus = params.get('status') || params.get('syncStatus') || '';
     state.stock = params.get('stock') || '';
+    state.matchStatus = params.get('matchStatus') || '';
+    state.confirmableOnly = params.get('confirmable') === '1' ? '1' : '';
     page = Math.max(1, Number(params.get('page')) || 1);
     limit = Math.max(10, Number(params.get('limit')) || 20);
   }
@@ -556,7 +744,9 @@
       els.channelSale.disabled = !state.channelFocus;
       els.channelSale.value = state.channelFocus ? state.channelSaleStatus : '';
     }
-    if (els.status) els.statusFilter.value = state.syncStatus;
+    if (els.statusFilter) els.statusFilter.value = state.syncStatus;
+    if (els.matchStatus) els.matchStatus.value = state.matchStatus;
+    if (els.confirmable) els.confirmable.value = state.confirmableOnly;
     if (els.stock) els.stock.value = state.stock;
     if (els.pageSize) els.pageSize.value = String(limit);
   }
@@ -577,10 +767,15 @@
 
   function updateFilterSummary(poolTotal) {
     if (!els.filterSummary) return;
-    if (viewMode === 'orphans') {
-      els.filterSummary.textContent = state.channelFocus
-        ? `${channelLabel(state.channelFocus)} kataloğunda BenimPOS ana havuzunda karşılığı olmayan ürünler. Önce katalog sync, sonra bu listeyi kontrol edin.`
-        : 'Kanal seçerek kanaldaki «yetim» ürünleri listeleyin.';
+    if (isMatchingView()) {
+      const active = activeFilterCount();
+      const safe = matchingSafeConfirmable;
+      els.filterSummary.textContent = [
+        poolTotal != null ? `Kuyruk: ${Number(poolTotal).toLocaleString('tr-TR')} ürün` : '',
+        total != null ? `Sonuç: ${Number(total).toLocaleString('tr-TR')}` : '',
+        safe != null ? `Hızlı onay: ${Number(safe).toLocaleString('tr-TR')}` : '',
+        active ? `${active} filtre aktif` : ''
+      ].filter(Boolean).join(' · ');
       return;
     }
     const active = activeFilterCount();
@@ -598,10 +793,12 @@
   function resetFilters() {
     state.q = '';
     state.brand = '';
-    state.channelFocus = viewMode === 'orphans' ? 'uber-eats' : '';
+    state.channelFocus = '';
     state.channelSaleStatus = '';
     state.syncStatus = '';
     state.stock = '';
+    state.matchStatus = '';
+    state.confirmableOnly = '';
     page = 1;
     applyFiltersToControls();
     syncFiltersToUrl();
@@ -614,6 +811,8 @@
     state.channelFocus = String(els.channel?.value || '').trim();
     state.channelSaleStatus = state.channelFocus ? String(els.channelSale?.value || '').trim() : '';
     state.syncStatus = String(els.statusFilter?.value || '').trim();
+    state.matchStatus = String(els.matchStatus?.value || '').trim();
+    state.confirmableOnly = String(els.confirmable?.value || '').trim();
     state.stock = String(els.stock?.value || '').trim();
   }
 
@@ -629,8 +828,8 @@
     loading = true;
     if (!options.silent) setStatus('Liste yükleniyor…');
     try {
-      if (viewMode === 'orphans') {
-        await loadOrphanProducts();
+      if (isMatchingView()) {
+        await loadMatchingCenter();
         setStatus('');
         syncFiltersToUrl();
         return;
@@ -756,15 +955,37 @@
   }
 
   async function syncCatalog(kind) {
-    const label = kind === 'ys' ? 'Yemeksepeti' : 'TGO';
+    const labels = { ys: 'Yemeksepeti', tgo: 'TGO', getir: 'Getir' };
+    const label = labels[kind] || kind;
     setStatus(`${label} katalog çekiliyor…`);
     try {
-      const path = kind === 'ys'
-        ? '/api/product-matching/sync-yemeksepeti-catalog'
-        : '/api/product-matching/sync-uber-catalog';
-      const data = await apiPost(path, kind === 'ys' ? { maxPages: 120 } : {});
+      const paths = {
+        ys: '/api/product-matching/sync-yemeksepeti-catalog',
+        tgo: '/api/product-matching/sync-uber-catalog',
+        getir: '/api/product-matching/sync-getir-catalog'
+      };
+      const path = paths[kind];
+      if (!path) throw new Error('Bilinmeyen katalog sync');
+      const payload = kind === 'ys' ? { maxPages: 120 } : {};
+      const data = await apiPost(path, payload);
       const linked = data.barcodeLink?.linked;
       setStatus(`${label} katalog güncellendi${linked != null ? ` · ${linked} barkod bağlandı` : ''}`);
+      await loadProducts();
+    } catch (error) {
+      setStatus(error.message, true);
+    }
+  }
+
+  async function autoMatchPerfect() {
+    const channelId = String(state.channelFocus || '').trim();
+    const scope = channelId ? channelLabel(channelId) : 'tüm kanallar';
+    setStatus(`Otomatik eşleştirme çalışıyor (${scope}, güven ≥%95)…`);
+    try {
+      const payload = channelId ? { channelId } : {};
+      const data = await apiPost('/api/product-matching/auto-match-perfect', payload);
+      const confirmed = Number(data.confirmed) || 0;
+      const skipped = Number(data.skipped) || 0;
+      setStatus(`Otomatik eşleştirme tamam — ${confirmed} ürün onaylandı${skipped ? ` · ${skipped} atlandı` : ''}`);
       await loadProducts();
     } catch (error) {
       setStatus(error.message, true);
@@ -781,7 +1002,7 @@
     }
   }
 
-  function openModal({ title, lead, bodyHtml, confirmLabel, onConfirm }) {
+  function openModal({ title, lead, bodyHtml, confirmLabel, onConfirm, onOpen }) {
     if (!els.modalOverlay) return;
     modalState = { onConfirm };
     if (els.modalTitle) els.modalTitle.textContent = title || '';
@@ -790,6 +1011,7 @@
     if (els.modalConfirm) els.modalConfirm.textContent = confirmLabel || 'Gönder';
     els.modalOverlay.hidden = false;
     els.modalOverlay.setAttribute('aria-hidden', 'false');
+    if (typeof onOpen === 'function') onOpen();
     els.modalConfirm?.focus();
   }
 
@@ -887,7 +1109,7 @@
       return;
     }
     const mode = options.mode || 'full';
-    const label = options.displayLabel || (channel === 'yemeksepeti' ? 'Yemeksepeti' : 'Trendyol GO');
+    const label = options.displayLabel || (channel === 'yemeksepeti' ? 'Yemeksepeti' : channel === 'getir' ? 'Getir' : 'Trendyol GO');
     const actionLabel = mode === 'price' ? 'Fiyat' : mode === 'stock' ? 'Stok' : 'Stok/fiyat';
     pushInFlight = true;
     notifyUser(`${label} — ${actionLabel.toLowerCase()} gönderiliyor…`, 'warn');
@@ -990,8 +1212,12 @@
     els.channel = document.getElementById('bpFilterChannel');
     els.channelSale = document.getElementById('bpFilterChannelSale');
     els.statusFilter = document.getElementById('bpFilterStatus');
+    els.matchStatus = document.getElementById('bpFilterMatchStatus');
+    els.confirmable = document.getElementById('bpFilterConfirmable');
     els.stock = document.getElementById('bpFilterStock');
     els.filterSummary = document.getElementById('bpFilterSummary');
+    els.matchingToolbar = document.getElementById('bpMatchingToolbar');
+    els.exportBtn = document.getElementById('bpExportBtn');
     els.modalOverlay = document.getElementById('bpModalOverlay');
     els.modalTitle = document.getElementById('bpModalTitle');
     els.modalLead = document.getElementById('bpModalLead');
@@ -1020,11 +1246,14 @@
     document.getElementById('bpSyncMasterBtn')?.addEventListener('click', () => syncMaster());
     document.getElementById('bpSyncYsBtn')?.addEventListener('click', () => syncCatalog('ys'));
     document.getElementById('bpSyncTgoBtn')?.addEventListener('click', () => syncCatalog('tgo'));
+    document.getElementById('bpSyncGetirBtn')?.addEventListener('click', () => syncCatalog('getir'));
+    document.getElementById('bpAutoMatchBtn')?.addEventListener('click', () => autoMatchPerfect());
     document.getElementById('bpExportBtn')?.addEventListener('click', () => exportCsv());
     document.getElementById('bpClearFilters')?.addEventListener('click', () => resetFilters());
     document.getElementById('bpApplyFilters')?.addEventListener('click', () => applyFilters());
     document.getElementById('bpViewMasters')?.addEventListener('click', () => setViewMode('masters'));
-    document.getElementById('bpViewOrphans')?.addEventListener('click', () => setViewMode('orphans'));
+    document.getElementById('bpViewMatching')?.addEventListener('click', () => setViewMode('matching'));
+    document.getElementById('bpViewOrphans')?.addEventListener('click', () => setViewMode('matching'));
 
     els.channel?.addEventListener('change', (event) => {
       const channelFocus = String(event.target.value || '').trim();
@@ -1087,6 +1316,20 @@
       const stockBtn = event.target.closest('[data-stock-push]');
       if (stockBtn) {
         openStockModal(stockBtn.getAttribute('data-stock-push'), stockBtn.getAttribute('data-barcode'));
+        return;
+      }
+
+      const confirmBtn = event.target.closest('[data-confirm-match]');
+      if (confirmBtn) {
+        const row = findMatchingRow(confirmBtn.getAttribute('data-confirm-match') || '');
+        confirmMatchRow(row).catch((error) => notifyUser(error.message, 'error'));
+        return;
+      }
+
+      const searchBtn = event.target.closest('[data-search-master]');
+      if (searchBtn) {
+        const row = findMatchingRow(searchBtn.getAttribute('data-search-master') || '');
+        openMasterSearchModal(row).catch((error) => notifyUser(error.message, 'error'));
       }
     });
   }
