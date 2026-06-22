@@ -19,8 +19,8 @@ Partner / Platform → api.petfix.com.tr → Cloudflare DNS → VPS → Nginx �
 ## İlk kurulum (VPS)
 
 ```bash
-git clone <repo> /opt/petfix/buybox-platform
-cd /opt/petfix/buybox-platform
+git clone <repo> /opt/petfix/petfix-ops
+cd /opt/petfix/petfix-ops
 cp .env.production.example .env.production
 # .env.production düzenle
 sudo bash deploy/vps-setup.sh
@@ -29,7 +29,7 @@ sudo bash deploy/vps-setup.sh
 ## Güncelleme deploy
 
 ```bash
-cd /opt/petfix/buybox-platform
+cd /opt/petfix/petfix-ops
 git pull
 bash scripts/deploy-production.sh
 ```
@@ -67,7 +67,7 @@ Production stack: `compose.prod.yml` — yalnızca **Postgres + API** (`DEPLOY_P
 Eski Buybox/Trendyol JSON kalıntılarını `data/` içinden temizlemek için:
 
 ```bash
-cd /opt/petfix/buybox-platform
+cd /opt/petfix/petfix-ops
 bash scripts/maintenance/vps-ops-only-cleanup.sh --dry-run
 bash scripts/maintenance/vps-ops-only-cleanup.sh --purge-files
 ```

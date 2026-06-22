@@ -4,7 +4,7 @@
 
 | Repo | Port | Kanallar |
 |------|------|----------|
-| `buybox-platform` (petfix-ops) | 8787 | Getir, YS, Uber Eats |
+| `petfix-ops` | 8787 | Getir, YS, Uber Eats |
 | `petfix-marketplace` | 8788 | Trendyol BuyBox |
 | `live-buybox-worker` | — | Worker → marketplace :8788 |
 
@@ -41,7 +41,7 @@ SQLITE_DUAL_WRITE=false
 
 ```bash
 # Ops paneli
-cd buybox-platform && npm start
+cd petfix-ops && npm start
 
 # Pazaryeri (ayrı terminal)
 cd ../petfix-marketplace && npm start
@@ -56,7 +56,7 @@ cd ../live-buybox-worker && node src/index.js
 npm run maintain:split-db
 ```
 
-- Ops: `buybox-platform/data/db.json` — getir, uber-eats, yemeksepeti
+- Ops: `petfix-ops/data/db.json` — getir, uber-eats, yemeksepeti
 - Marketplace: `petfix-marketplace/data/db.json` — trendyol-marketplace, buybox snapshot'ları
 
 ## VPS temizliği

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Monolit db.json'ı iki repoya böler:
- *   - petfix-ops (buybox-platform): HzlMrktOps verisi
+ *   - petfix-ops: HzlMrktOps verisi
  *   - petfix-marketplace: Trendyol Buybox verisi
  *
  *   node scripts/maintenance/split-local-db.js --dry-run

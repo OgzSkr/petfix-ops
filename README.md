@@ -12,7 +12,7 @@ Getir, Yemeksepeti ve Uber Eats operasyon paneli.
 ## Hızlı başlangıç
 
 ```bash
-cd buybox-platform   # repo adı geçiş döneminde; içerik = petfix-ops
+cd petfix-ops
 npm install
 cp .env.example .env
 npm start
@@ -69,7 +69,7 @@ npm run smoke
 ## Proje yapısı
 
 ```
-buybox-platform/
+petfix-ops/
 ├── server.js
 ├── lib/
 │   ├── platform/          # HTTP router, panel servisleri
