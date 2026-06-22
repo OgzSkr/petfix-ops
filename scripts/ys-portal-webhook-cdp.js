@@ -13,7 +13,6 @@
  */
 import { spawn, execSync } from 'node:child_process';
 import { readEnvFile } from '../lib/env.js';
-import { paths } from '../lib/config.js';
 import { resolveOpsHubConfig } from '../lib/ops-hub/config.js';
 import { buildYemeksepetiPortalWebhookSecret } from '../lib/ops-hub/webhooks/webhook-auth.js';
 import {
@@ -25,6 +24,29 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 
+const ROOT_DIR = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
+function resolvePlatformEnvPath() {
+  if (process.env.PETFIX_ENV_FILE) {
+    return path.join(ROOT_DIR, process.env.PETFIX_ENV_FILE);
+  }
+  const prodPath = path.join(ROOT_DIR, '.env.production');
+  const localPath = path.join(ROOT_DIR, '.env');
+  if (fs.existsSync(prodPath)) {
+    return prodPath;
+  }
+  return localPath;
+}
+
+const platformEnv = await readEnvFile(resolvePlatformEnvPath());
+const config = resolveOpsHubConfig(platformEnv);
+const secret = String(platformEnv.YEMEKSEPETI_WEBHOOK_SECRET || '').trim();
+const orderUrl = `${config.publicApiBaseUrl}/webhooks/v1/yemeksepeti/orders`;
+const catalogUrl = `${config.publicApiBaseUrl}/webhooks/v1/yemeksepeti/catalog`;
+const portalSecret = buildYemeksepetiPortalWebhookSecret(secret, 'petfix');
+const registerCatalog = process.argv.includes('--catalog') || !process.argv.includes('--orders-only');
+const ordersOnly = process.argv.includes('--orders-only');
+const catalogOnly = process.argv.includes('--catalog-only');
+
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const CHROME_PROFILE = process.env.CHROME_PROFILE || 'Profile 2'; // Cevizlibağ
 const PROFILE = path.resolve(process.env.CHROME_AUTOMATION_DIR
@@ -35,12 +57,6 @@ const CHAIN_ID = '24fbaadf-e4d9-4040-87ce-7fa93ff26a19';
 const TARGET_URL = `https://partner-app.yemeksepeti.com/shops-integrations/chain/${CHAIN_ID}`;
 
 assertNotRealChromeUserDataDir(PROFILE);
-
-const platformEnv = await readEnvFile(paths.platformEnv);
-const config = resolveOpsHubConfig(platformEnv);
-const secret = String(platformEnv.YEMEKSEPETI_WEBHOOK_SECRET || '').trim();
-const orderUrl = `${config.publicApiBaseUrl}/webhooks/v1/yemeksepeti/orders`;
-const portalSecret = buildYemeksepetiPortalWebhookSecret(secret, 'petfix');
 
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
@@ -165,6 +181,10 @@ async function cdpNavigate(tab, url) {
 
 const fillJs = `(async function(){
   const ORDER_URL = ${JSON.stringify(orderUrl)};
+  const CATALOG_URL = ${JSON.stringify(catalogUrl)};
+  const REGISTER_CATALOG = ${registerCatalog ? 'true' : 'false'};
+  const ORDERS_ONLY = ${ordersOnly ? 'true' : 'false'};
+  const CATALOG_ONLY = ${catalogOnly ? 'true' : 'false'};
   const PORTAL_SECRET = ${JSON.stringify(portalSecret)};
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const norm = (s) => (s || '').trim().toLowerCase()
@@ -207,6 +227,45 @@ const fillJs = `(async function(){
     input.dispatchEvent(new Event('change', { bubbles: true }));
     return true;
   };
+  const findWebhookButton = (kind) => {
+    const buttons = Array.from(document.querySelectorAll('button'));
+    if (kind === 'orders') {
+      return buttons.find((b) =>
+        /^siparis webhook ayarlari$/.test(norm(b.innerText))
+        || /^order webhook settings$/.test(norm(b.innerText))
+        || /^order webhook management$/.test(norm(b.innerText))
+      ) || null;
+    }
+    return buttons.find((b) =>
+      /katalog.*webhook|catalog.*webhook|katalog.*callback|catalog.*callback|assortment.*callback|urun guncelleme.*webhook|product update.*webhook/i.test(norm(b.innerText))
+    ) || null;
+  };
+  const fillWebhookForm = async (targetUrl, label) => {
+    await dismissDialogs();
+    const inputs = Array.from(document.querySelectorAll('input:not([type=hidden]):not([type=checkbox]),textarea'));
+    const urlField = inputs.find((i) =>
+      /url|api|endpoint|your api|gonderilecegi|gönderileceği|callback/i.test(
+        (i.placeholder || '') + (i.name || '') + (i.getAttribute('aria-label') || '')
+      )
+    ) || inputs[0];
+    const secretField = inputs.find((i) =>
+      /secret|gizli|token|authorization|sirri|sır/i.test(
+        (i.placeholder || '') + (i.name || '') + (i.getAttribute('aria-label') || '')
+      )
+    ) || inputs[1];
+    const filledUrl = setInput(urlField, targetUrl);
+    const filledSecret = setInput(secretField, PORTAL_SECRET);
+    await sleep(600);
+    const saved = clickBtn(/^kaydet$|^save$/);
+    await sleep(2500);
+    return {
+      label,
+      ok: Boolean(filledUrl && filledSecret && saved),
+      saved,
+      urlValue: (urlField?.value || '').slice(0, 120),
+      secretLen: (secretField?.value || '').length
+    };
+  };
   if (/login/i.test(location.pathname)) {
     return { ok: false, reason: 'login_required', url: location.href };
   }
@@ -242,52 +301,65 @@ const fillJs = `(async function(){
   await sleep(5000);
   await scrollMain(40);
   await sleep(2000);
-  const webhookBtn = Array.from(document.querySelectorAll('button')).find((b) =>
-    /^siparis webhook ayarlari$/.test(norm(b.innerText))
-    || /^order webhook settings$/.test(norm(b.innerText))
-    || /^order webhook management$/.test(norm(b.innerText))
-  );
-  if (!webhookBtn) {
-    const visibleBtns = Array.from(document.querySelectorAll('button'))
-      .map((b) => (b.innerText || '').trim())
-      .filter(Boolean)
-      .filter((t) => /webhook|secret|management|configure|direct|siparis/i.test(t));
-    return {
-      ok: false,
-      reason: 'webhook_settings_button_missing',
-      steps,
-      visibleBtns,
-      url: location.href
-    };
+  const webhookBtn = findWebhookButton('orders');
+  let orderResult = { label: 'orders', ok: true, skipped: CATALOG_ONLY };
+  if (!CATALOG_ONLY) {
+    if (!webhookBtn) {
+      const visibleBtns = Array.from(document.querySelectorAll('button'))
+        .map((b) => (b.innerText || '').trim())
+        .filter(Boolean)
+        .filter((t) => /webhook|secret|management|configure|direct|siparis|katalog|catalog|callback/i.test(t));
+      return {
+        ok: false,
+        reason: 'webhook_settings_button_missing',
+        steps,
+        visibleBtns,
+        url: location.href
+      };
+    }
+    webhookBtn.click();
+    steps.push(webhookBtn.innerText.trim());
+    await sleep(4000);
+    orderResult = await fillWebhookForm(ORDER_URL, 'orders');
+    steps.push('orders-saved');
   }
-  webhookBtn.click();
-  steps.push(webhookBtn.innerText.trim());
-  await sleep(4000);
-  await dismissDialogs();
-  const inputs = Array.from(document.querySelectorAll('input:not([type=hidden]):not([type=checkbox]),textarea'));
-  const urlField = inputs.find((i) =>
-    /url|api|endpoint|your api|gonderilecegi|gönderileceği/i.test(
-      (i.placeholder || '') + (i.name || '') + (i.getAttribute('aria-label') || '')
-    )
-  );
-  const secretField = inputs.find((i) =>
-    /secret|gizli|token|authorization|sirri|sır/i.test(
-      (i.placeholder || '') + (i.name || '') + (i.getAttribute('aria-label') || '')
-    )
-  );
-  const filledUrl = setInput(urlField, ORDER_URL);
-  const filledSecret = setInput(secretField, PORTAL_SECRET);
-  await sleep(600);
-  const saved = clickBtn(/^kaydet$|^save$/);
-  await sleep(2500);
+
+  let catalogResult = { label: 'catalog', ok: false, skipped: true };
+  if (REGISTER_CATALOG || CATALOG_ONLY) {
+    await dismissDialogs();
+    clickBtn(/^geri$|^back$|^iptal$|^cancel$/);
+    await sleep(2000);
+    clickBtn(/^api'?si$/);
+    await sleep(3000);
+    await scrollMain(40);
+    await sleep(1500);
+    const catalogBtn = findWebhookButton('catalog');
+    if (!catalogBtn) {
+      const visibleBtns = Array.from(document.querySelectorAll('button'))
+        .map((b) => (b.innerText || '').trim())
+        .filter(Boolean)
+        .filter((t) => /webhook|katalog|catalog|callback/i.test(t));
+      catalogResult = {
+        label: 'catalog',
+        ok: false,
+        skipped: false,
+        reason: 'catalog_webhook_button_missing',
+        visibleBtns
+      };
+    } else {
+      catalogBtn.click();
+      steps.push(catalogBtn.innerText.trim());
+      await sleep(4000);
+      catalogResult = await fillWebhookForm(CATALOG_URL, 'catalog');
+      steps.push('catalog-saved');
+    }
+  }
+
   return {
-    ok: Boolean(filledUrl && filledSecret && saved),
+    ok: (CATALOG_ONLY ? catalogResult.ok : orderResult.ok) && (!REGISTER_CATALOG && !CATALOG_ONLY || catalogResult.ok || catalogResult.skipped),
+    orders: orderResult,
+    catalog: catalogResult,
     steps,
-    saved,
-    urlValue: (urlField?.value || '').slice(0, 120),
-    secretLen: (secretField?.value || '').length,
-    fieldCount: inputs.length,
-    inputPlaceholders: inputs.map((i) => i.placeholder).filter(Boolean),
     url: location.href
   };
 })()`;
@@ -342,23 +414,34 @@ async function main() {
     process.exit(2);
   }
 
-  if (!tab.url?.includes('shops-integrations')) {
-    await cdpNavigate(tab, TARGET_URL);
-    await sleep(6000);
+  const integrationsUrl = TARGET_URL;
+  if (!tab.url?.includes('shops-integrations/chain')) {
+    await cdpNavigate(tab, integrationsUrl);
+    await sleep(8000);
     tab = await findYsTab();
-  } else if (tab.url?.includes('updates_list_')) {
-    await cdpNavigate(tab, TARGET_URL);
-    await sleep(6000);
+  } else if (tab.url?.includes('live-orders') || tab.url?.includes('updates_list_')) {
+    await cdpNavigate(tab, integrationsUrl);
+    await sleep(8000);
     tab = await findYsTab();
   }
 
-  console.log('Webhook formu dolduruluyor…');
+  console.log(`Webhook formu dolduruluyor… (sipariş${registerCatalog ? ' + katalog' : ''})`);
+  console.log('Sipariş URL:', orderUrl);
+  if (registerCatalog) console.log('Katalog URL:', catalogUrl);
   const result = await cdpEvaluate(tab, fillJs);
   console.log('\nSonuç:', JSON.stringify(result, null, 2));
 
-  if (!result?.ok) {
-    console.log('\nForm tam doldurulamadı. Otomasyon Chrome penceresinde Settings → API → Order Webhook Settings kontrol edin.');
+  if (!result?.orders?.ok && !catalogOnly) {
+    console.log('\nSipariş webhook formu doldurulamadı. Otomasyon Chrome → jk2w Ayarlar → API → Sipariş Webhook Ayarları.');
     process.exit(3);
+  }
+
+  if ((registerCatalog || catalogOnly) && result?.catalog && !result.catalog.ok && !result.catalog.skipped) {
+    console.log('\nSipariş kaydı tamam; katalog butonu bulunamadı.');
+    console.log('Manuel: Ayarlar → API → Katalog Webhook / Catalog Callback bölümüne şu URL\'yi yapıştırın:');
+    console.log(`  ${catalogUrl}`);
+    console.log('Secret: sipariş webhook ile aynı Basic değer.');
+    process.exit(4);
   }
 
   console.log('\n✓ Webhook portal kaydı tamamlandı (Cevizlibağ profili kopyası).');

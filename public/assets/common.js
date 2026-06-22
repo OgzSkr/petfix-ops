@@ -14,6 +14,7 @@ window.BuyBoxCommon = {
 
   logout() {
     sessionStorage.removeItem(this.TOKEN_KEY);
+    fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' }).catch(() => {});
     this.redirectToLogin();
   },
 
@@ -26,14 +27,15 @@ window.BuyBoxCommon = {
   },
 
   async authFetch(url, options = {}) {
+    const common = window.BuyBoxCommon;
     const response = await fetch(url, {
       ...options,
-      headers: { ...this.apiHeaders(options.body !== undefined), ...(options.headers || {}) }
+      headers: { ...common.apiHeaders(options.body !== undefined), ...(options.headers || {}) }
     });
 
     if (response.status === 401) {
-      sessionStorage.removeItem(this.TOKEN_KEY);
-      this.redirectToLogin();
+      sessionStorage.removeItem(common.TOKEN_KEY);
+      common.redirectToLogin();
       throw new Error('Oturum süresi doldu veya yetkisiz erişim.');
     }
 
@@ -111,26 +113,5 @@ window.BuyBoxCommon = {
     });
 
     applyZoom();
-  },
-
-  initPlatformNav() {
-    const toggle = document.getElementById('platformNavToggle');
-    const nav = document.getElementById('platformTopNav');
-    const actions = document.querySelector('.platform-header-actions');
-    if (!toggle || !nav || !actions) return;
-
-    toggle.addEventListener('click', () => {
-      const open = actions.classList.toggle('is-open');
-      nav.classList.toggle('is-open', open);
-      toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
-    });
-
-    nav.querySelectorAll('a').forEach((link) => {
-      link.addEventListener('click', () => {
-        actions.classList.remove('is-open');
-        nav.classList.remove('is-open');
-        toggle.setAttribute('aria-expanded', 'false');
-      });
-    });
   }
 };

@@ -13,8 +13,6 @@ if (logoutBtn) {
   logoutBtn.addEventListener('click', () => window.BuyBoxCommon.logout());
 }
 
-window.BuyBoxCommon.initPlatformNav?.();
-
 let healthState = null;
 let ordersState = null;
 

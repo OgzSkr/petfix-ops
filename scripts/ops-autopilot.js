@@ -72,6 +72,16 @@ await step('Health check', async () => {
 await step('BenimPOS master sync', async () => {
   const r = await api('/api/product-matching/sync-master', { method: 'POST', body: '{}' });
   if (!r.data.ok) throw new Error(r.data.error || 'sync-master failed');
+  if (r.data.started || r.data.running) {
+    for (let i = 0; i < 120; i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, i === 0 ? 500 : 2000));
+      const status = await api('/api/product-matching/sync-master/status');
+      if (status.data.running) continue;
+      if (status.data.error) throw new Error(status.data.error);
+      return status.data.result || status.data;
+    }
+    throw new Error('sync-master timeout');
+  }
   return r.data;
 });
 
@@ -124,7 +134,7 @@ await step('Kanal poll (TGO+YS)', async () => {
 
 await step('Shadow readiness', async () => {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, ['scripts/ops-shadow-readiness.js'], {
+    const child = spawn(process.execPath, ['scripts/dev/ops-shadow-readiness.js'], {
       cwd: projectRoot,
       stdio: 'inherit'
     });

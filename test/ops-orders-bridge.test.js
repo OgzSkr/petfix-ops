@@ -22,6 +22,7 @@ test('packageFromYemeksepetiOpsRow uses yemeksepetiOrder payload when present', 
     display_id: 'YS-1',
     ingest_source: 'webhook',
     raw_payload: {
+      portalSummary: { orderId: 'ys-1', subtotal: 99 },
       yemeksepetiOrder: {
         order_id: 'ys-1',
         order_code: 'YS-1',
@@ -42,6 +43,63 @@ test('packageFromYemeksepetiOpsRow uses yemeksepetiOrder payload when present', 
   assert.equal(pkg.lines[0].barcode, '8690001112223');
 });
 
+test('packageFromYemeksepetiOpsRow prefers real db lines over portal summary', () => {
+  const pkg = packageFromYemeksepetiOpsRow({
+    external_id: 'jk2w-1',
+    display_id: 'jk2w-1',
+    ingest_source: 'portal_api',
+    ordered_at: '2026-06-10T12:00:00Z',
+    status: 'completed',
+    raw_payload: {
+      portalSummary: { orderId: 'jk2w-1', subtotal: 120, orderStatus: 'PICKED_UP' }
+    },
+    lines: [{
+      barcode: '8690001112223',
+      title: 'Kedi Maması',
+      quantity: 2,
+      unit_price: 60,
+      channel_product_id: '2662ZF'
+    }]
+  });
+  assert.equal(pkg.lines.length, 1);
+  assert.equal(pkg.lines[0].productName, 'Kedi Maması');
+});
+
+test('packageFromUberOpsRow carries benimpos sales code from ops row', () => {
+  const pkg = packageFromUberOpsRow({
+    external_id: 'pkg-bp',
+    display_id: 'ORD-9',
+    channel_status: 'Completed',
+    ordered_at: '2026-06-13T15:10:00Z',
+    ingest_source: 'webhook',
+    benimpos_sales_code: 'S-42',
+    raw_payload: {},
+    lines: []
+  });
+  assert.equal(pkg.benimposSalesCode, 'S-42');
+});
+
+test('packageFromUberOpsRow rescales legacy TGO unit_price stored as price/100', () => {
+  const pkg = packageFromUberOpsRow({
+    external_id: 'pkg-legacy',
+    display_id: '11319912956',
+    channel_status: 'Picking',
+    ordered_at: '2026-06-13T15:10:00Z',
+    ingest_source: 'webhook',
+    raw_payload: { grossAmount: 1200 },
+    lines: [{
+      barcode: '8690637037428',
+      title: 'Kedi Maması',
+      quantity: 2,
+      unit_price: 6,
+      channel_product_id: 'sku-a'
+    }]
+  });
+  assert.equal(pkg.packageGrossAmount, 1200);
+  assert.equal(pkg.lines[0].lineUnitPrice, 600);
+  assert.equal(pkg.lines[0].quantity, 2);
+});
+
 test('packageFromUberOpsRow builds profit lines from ops_order_lines json', () => {
   const pkg = packageFromUberOpsRow({
     external_id: 'pkg-99',
@@ -49,7 +107,7 @@ test('packageFromUberOpsRow builds profit lines from ops_order_lines json', () =
     channel_status: 'Picking',
     ordered_at: '2026-06-10T12:00:00Z',
     ingest_source: 'webhook',
-    raw_payload: { grossAmount: 120 },
+    raw_payload: { source: 'tgo-grocery-packages', grossAmount: 120 },
     lines: [{
       barcode: '8690637037428',
       title: 'Kedi Maması',
@@ -61,5 +119,104 @@ test('packageFromUberOpsRow builds profit lines from ops_order_lines json', () =
   assert.equal(pkg.shipmentPackageId, 'pkg-99');
   assert.equal(pkg.packageGrossAmount, 120);
   assert.equal(pkg.lines.length, 1);
+  assert.equal(pkg.lines[0].lineUnitPrice, 60);
+  assert.equal(pkg.lines[0].lineSalesAmount, 120);
   assert.equal(pkg.lines[0].productName, 'Kedi Maması');
+});
+
+test('packageFromUberOpsRow matches Trendyol Go unit prices for order 11339327359', () => {
+  const pkg = packageFromUberOpsRow({
+    external_id: 'pkg-c426',
+    display_id: '11339327359',
+    channel_status: 'Picking',
+    ordered_at: '2026-06-19T17:14:00Z',
+    ingest_source: 'webhook',
+    raw_payload: { source: 'tgo-grocery-packages', grossAmount: 2505, totalPrice: 2355 },
+    lines: [
+      { barcode: '6927749871088', title: 'Ödül', quantity: 5, unit_price: 131 },
+      { barcode: '5998749130469', title: 'Dreamies', quantity: 2, unit_price: 75 },
+      { barcode: '052742059532', title: 'Hills', quantity: 1, unit_price: 1700 }
+    ]
+  });
+
+  assert.equal(pkg.packageGrossAmount, 2505);
+  assert.equal(pkg.lines[0].lineUnitPrice, 131);
+  assert.equal(pkg.lines[0].lineSalesAmount, 655);
+  assert.equal(pkg.lines[1].lineUnitPrice, 75);
+  assert.equal(pkg.lines[1].lineSalesAmount, 150);
+  assert.equal(pkg.lines[2].lineSalesAmount, 1700);
+});
+
+test('packageFromUberOpsRow prefers raw Trendyol customer name over legacy asterisk mask', () => {
+  const pkg = packageFromUberOpsRow({
+    external_id: 'pkg-name',
+    display_id: '11320477240',
+    channel_status: 'Delivered',
+    ordered_at: '2026-06-13T15:10:00Z',
+    ingest_source: 'webhook',
+    customer_masked: { name: 'me***em', phone: '53******67' },
+    raw_payload: {
+      grossAmount: 500,
+      customer: { name: 'Merve v.' }
+    },
+    lines: [{
+      barcode: '8690637037428',
+      title: 'Ürün',
+      quantity: 1,
+      unit_price: 500,
+      channel_product_id: 'sku-a'
+    }]
+  });
+  assert.equal(pkg.customerName, 'Merve v.');
+});
+
+test('packageFromUberOpsRow resolves list unit from tgoSourceLines when db unit_price is discounted', () => {
+  const pkg = packageFromUberOpsRow({
+    external_id: 'pkg-ptfx',
+    display_id: '11343529986',
+    channel_status: 'Delivered',
+    ordered_at: '2026-06-21T10:24:00Z',
+    ingest_source: 'webhook',
+    raw_payload: {
+      source: 'tgo-grocery-packages',
+      grossAmount: 1078.89,
+      tgoSourceLines: [{
+        barcode: 'PTFX027',
+        price: 300,
+        amount: 300,
+        items: [{ id: '1' }, { id: '2' }]
+      }]
+    },
+    lines: [{
+      barcode: 'PTFX027',
+      title: 'Somonlu Kısırlaştırılmış Kedi Maması Açık 500 Gr',
+      quantity: 2,
+      unit_price: 150,
+      channel_product_id: 'PTFX027'
+    }]
+  });
+
+  assert.equal(pkg.lines[0].lineUnitPrice, 300);
+  assert.equal(pkg.lines[0].lineSalesAmount, 600);
+  assert.equal(pkg.lines[0].paidLineGross, 300);
+});
+
+test('packageFromUberOpsRow ignores legacy asterisk-masked customer names', () => {
+  const pkg = packageFromUberOpsRow({
+    external_id: 'pkg-legacy-name',
+    display_id: '11320477241',
+    channel_status: 'Delivered',
+    ordered_at: '2026-06-13T15:10:00Z',
+    ingest_source: 'webhook',
+    customer_masked: { name: 'Y**u' },
+    raw_payload: { grossAmount: 500 },
+    lines: [{
+      barcode: '8690637037428',
+      title: 'Ürün',
+      quantity: 1,
+      unit_price: 500,
+      channel_product_id: 'sku-a'
+    }]
+  });
+  assert.equal(pkg.customerName, null);
 });

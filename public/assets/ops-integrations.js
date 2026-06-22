@@ -5,6 +5,7 @@ const ops = window.OpsCommon;
 
 const listView = document.getElementById('listView');
 const detailView = document.getElementById('detailView');
+const integrationsHero = document.getElementById('integrationsHero');
 const integrationCards = document.getElementById('integrationCards');
 const setupAlerts = document.getElementById('setupAlerts');
 const setupAlertsList = document.getElementById('setupAlertsList');
@@ -30,12 +31,223 @@ const autoAcceptWrap = document.getElementById('autoAcceptWrap');
 const enabledToggle = document.getElementById('enabledToggle');
 const testBtn = document.getElementById('testBtn');
 const testResult = document.getElementById('testResult');
+const workerPanelBody = document.getElementById('workerPanelBody');
+const pollEnabledToggle = document.getElementById('pollEnabledToggle');
+const pollIntervalInput = document.getElementById('pollIntervalInput');
+const matchingEnabledToggle = document.getElementById('matchingEnabledToggle');
+const saveWorkerSettingsBtn = document.getElementById('saveWorkerSettingsBtn');
+const runPollBtn = document.getElementById('runPollBtn');
+const runMatchingBtn = document.getElementById('runMatchingBtn');
+const runDailyBtn = document.getElementById('runDailyBtn');
+const workerActionResult = document.getElementById('workerActionResult');
+const capabilitiesPanel = document.getElementById('capabilitiesPanel');
+const guideSteps = document.getElementById('guideSteps');
+const detailLogo = document.getElementById('detailLogo');
+const intStatTotal = document.getElementById('intStatTotal');
+const intStatConnected = document.getElementById('intStatConnected');
+const intStatAttention = document.getElementById('intStatAttention');
 
+const OPS_REGISTRY = {
+  trendyol_go: 'uber-eats',
+  yemeksepeti: 'yemeksepeti',
+  getir: 'getir'
+};
+
+const CAP_LABELS = {
+  fetchOrders: 'Sipariş',
+  syncProducts: 'Ürün sync',
+  updateStock: 'Stok',
+  updatePrice: 'Fiyat',
+  updateOrderStatus: 'Durum',
+  handleWebhook: 'Webhook'
+};
+
+let controlBoard = null;
 let currentChannel = null;
 let webhooks = null;
 
+function renderWorkerPanel(board) {
+  if (!workerPanelBody || !board) return;
+  const poll = board.workers?.opsPoll;
+  const match = board.workers?.matchingSync;
+  const pollOn = poll?.settings?.enabled;
+  const pollLine = poll
+    ? `Sipariş çekme: ${pollOn ? 'açık' : 'kapalı'}${poll.scheduled ? ' (zamanlayıcı aktif)' : ''} · ${poll.settings?.intervalMinutes || 2} dk aralık`
+    : 'Sipariş çekme: —';
+  const pollRun = poll?.lastRunAt ? `Son: ${ops.formatTime(poll.lastRunAt)}${poll.lastRunOk === false ? ' (hata)' : ''}` : '';
+  const matchLine = match?.settings
+    ? `Ürün güncelleme: ${match.settings.enabled ? 'açık' : 'kapalı'} · ${match.settings.intervalMinutes || '?'} dk aralık`
+    : 'Ürün güncelleme: —';
+  workerPanelBody.innerHTML = `<p>${ops.escapeHtml(pollLine)}${pollRun ? ` · ${ops.escapeHtml(pollRun)}` : ''}</p><p>${ops.escapeHtml(matchLine)}</p>`;
+
+  if (pollEnabledToggle) {
+    pollEnabledToggle.checked = Boolean(poll?.settings?.enabled);
+  }
+  if (pollIntervalInput && poll?.settings?.intervalMinutes) {
+    pollIntervalInput.value = String(poll.settings.intervalMinutes);
+  }
+  if (matchingEnabledToggle && match?.settings) {
+    matchingEnabledToggle.checked = Boolean(match.settings.enabled);
+  }
+}
+
+function renderCapabilities(opsChannel) {
+  if (!capabilitiesPanel) return;
+  const registryId = OPS_REGISTRY[opsChannel];
+  const row = (controlBoard?.opsChannels || []).find((c) => c.registryId === registryId);
+  if (!row?.capabilities) {
+    capabilitiesPanel.textContent = '—';
+    return;
+  }
+  capabilitiesPanel.innerHTML = Object.entries(row.capabilities)
+    .map(([key, value]) => {
+      const label = CAP_LABELS[key] || key;
+      const cls = value === false ? 'missing' : 'connected';
+      const text = value === false ? `${label}: yok` : `${label}: ${value}`;
+      return `<span class="ops-int-pill ${cls}" style="margin:2px 4px 2px 0">${ops.escapeHtml(text)}</span>`;
+    })
+    .join('');
+}
+
+async function loadControlBoard() {
+  try {
+    controlBoard = await ops.api('/api/channels/control-board');
+    renderWorkerPanel(controlBoard);
+  } catch (error) {
+    if (workerPanelBody) {
+      workerPanelBody.textContent = `Kontrol paneli yüklenemedi: ${error.message}`;
+    }
+  }
+  return controlBoard;
+}
+
+async function saveWorkerSettings() {
+  if (!workerActionResult) return;
+  const ok = await ops.confirmAction({
+    title: 'Otomasyon ayarlarını kaydet?',
+    body: 'Sipariş çekme ve ürün güncelleme zamanlaması değişecek.',
+    confirmLabel: 'Kaydet'
+  });
+  if (!ok) return;
+
+  workerActionResult.textContent = 'Kaydediliyor…';
+  workerActionResult.className = 'ops-feedback';
+  window.PfStatus?.loading?.('Otomasyon ayarları kaydediliyor');
+  try {
+    await Promise.all([
+      ops.api('/api/ops/poll/settings', {
+        method: 'POST',
+        body: JSON.stringify({
+          enabled: pollEnabledToggle?.checked === true,
+          intervalMinutes: Number(pollIntervalInput?.value || 2)
+        })
+      }),
+      ops.api('/api/product-matching/sync-schedule', {
+        method: 'POST',
+        body: JSON.stringify({
+          enabled: matchingEnabledToggle?.checked === true
+        })
+      })
+    ]);
+    workerActionResult.textContent = 'Ayarlar kaydedildi';
+    workerActionResult.className = 'ops-feedback ok';
+    window.PfStatus?.success?.('Otomasyon ayarları kaydedildi', 'Sipariş ve ürün güncelleme zamanlaması güncellendi');
+    await loadControlBoard();
+  } catch (error) {
+    workerActionResult.textContent = error.message;
+    workerActionResult.className = 'ops-feedback err';
+    window.PfStatus?.error?.('Ayarlar kaydedilemedi', error.message);
+  }
+}
+
+async function runWorkerAction(action) {
+  if (!workerActionResult) return;
+
+  const messages = {
+    'ops-poll': {
+      title: 'Şimdi sipariş çekilsin mi?',
+      body: 'Tüm açık mağazalardan yeni siparişler kontrol edilecek.',
+      confirmLabel: 'Sipariş çek'
+    },
+    'matching-sync': {
+      title: 'Şimdi ürün listesi güncellensin mi?',
+      body: 'Kanallardaki ürün katalogları yeniden indirilecek.',
+      confirmLabel: 'Güncelle'
+    },
+    'daily-sync': {
+      title: 'Gün sonu senkron çalıştırılsın mı?',
+      body: 'Bu işlem birkaç dakika sürebilir. Devam etmek istiyor musunuz?',
+      confirmLabel: 'Çalıştır'
+    }
+  };
+  const prompt = messages[action] || {
+    title: 'İşlemi çalıştır?',
+    body: 'Bu işlem arka planda çalışacak.',
+    confirmLabel: 'Onayla'
+  };
+  const ok = await ops.confirmAction(prompt);
+  if (!ok) return;
+
+  workerActionResult.textContent = 'Çalışıyor…';
+  workerActionResult.className = 'ops-feedback';
+  const statusLabels = {
+    'ops-poll': 'Siparişler çekiliyor',
+    'matching-sync': 'Ürün listeleri güncelleniyor',
+    'daily-sync': 'Gün sonu senkron çalışıyor'
+  };
+  window.PfStatus?.loading?.(statusLabels[action] || 'İşlem çalışıyor', 'Bu birkaç dakika sürebilir');
+  try {
+    const data = await ops.api('/api/channels/control/actions', {
+      method: 'POST',
+      body: JSON.stringify({ action })
+    });
+    const skipped = data.skipped;
+    const hasErrors = data.ok === false;
+    workerActionResult.textContent = skipped
+      ? `Atlandı: ${data.reason || 'bilinmiyor'}`
+      : hasErrors
+        ? 'Tamamlandı (hatalar var — logları kontrol edin)'
+        : 'Tamamlandı';
+    workerActionResult.className = hasErrors ? 'ops-feedback err' : 'ops-feedback ok';
+    if (skipped) {
+      window.PfStatus?.error?.('İşlem atlandı', data.reason || 'Bilinmeyen neden');
+    } else if (hasErrors) {
+      window.PfStatus?.error?.('İşlem tamamlandı', 'Bazı adımlarda hata oluştu — Sistem Nabzı\'na bakın');
+    } else {
+      window.PfStatus?.success?.('İşlem tamamlandı', statusLabels[action] || 'Arka plan görevi bitti');
+    }
+    await loadControlBoard();
+  } catch (error) {
+    workerActionResult.textContent = error.message;
+    workerActionResult.className = 'ops-feedback err';
+    window.PfStatus?.error?.('İşlem başarısız', error.message);
+  }
+}
+
+function channelLogoId(channel) {
+  return OPS_REGISTRY[channel] || channel;
+}
+
+function renderChannelLogoHtml(channel, size = 'md') {
+  const logos = window.PetFixChannelLogos;
+  if (!logos?.render) return '';
+  return logos.render(channelLogoId(channel), { size });
+}
+
+function updateIntegrationStats(integrations) {
+  const total = integrations.length;
+  const connected = integrations.filter((row) => row.status === 'connected').length;
+  const attention = integrations.filter((row) =>
+    row.status === 'missing' || row.status === 'error' || row.status === 'disabled'
+  ).length;
+  if (intStatTotal) intStatTotal.textContent = String(total);
+  if (intStatConnected) intStatConnected.textContent = String(connected);
+  if (intStatAttention) intStatAttention.textContent = String(attention);
+}
+
 function showListView() {
   currentChannel = null;
+  integrationsHero?.classList.remove('hidden');
   listView.classList.remove('hidden');
   detailView.classList.add('hidden');
   history.replaceState(null, '', '/ops/integrations/');
@@ -43,6 +255,7 @@ function showListView() {
 
 function showDetailView(channel) {
   currentChannel = channel;
+  integrationsHero?.classList.add('hidden');
   listView.classList.add('hidden');
   detailView.classList.remove('hidden');
   history.replaceState(null, '', `/ops/integrations/?channel=${encodeURIComponent(channel)}`);
@@ -50,20 +263,37 @@ function showDetailView(channel) {
 
 function renderCards(integrations) {
   integrationCards.innerHTML = '';
+  updateIntegrationStats(integrations);
   const pending = [];
+
+  if (!integrations.length) {
+    integrationCards.innerHTML = `
+      <div class="pf-empty-state ops-int-empty">
+        <span class="pf-empty-icon" aria-hidden="true">⎔</span>
+        <strong>Kanal bulunamadı</strong>
+        <p>Bu şube için tanımlı entegrasyon yok.</p>
+      </div>`;
+    setupAlerts.classList.add('hidden');
+    return;
+  }
 
   for (const row of integrations) {
     const card = document.createElement('button');
     card.type = 'button';
-    card.className = 'ops-int-card';
+    card.className = `ops-int-card ops-int-card--${ops.escapeHtml(row.status || 'missing')}`;
     const userMsg = ops.gateUserMessage(row.gate, row.gateNote);
+    const logoHtml = renderChannelLogoHtml(row.channel, 'lg');
     card.innerHTML = `
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:10px">
-        <h3 style="margin:0;font-size:1.05rem">${ops.escapeHtml(row.label)}</h3>
-        <span class="ops-int-pill ${ops.escapeHtml(row.status)}">${ops.escapeHtml(ops.integrationStatusLabel(row.status))}</span>
+      <div class="ops-int-card-head">
+        <span class="ops-int-card-logo">${logoHtml}</span>
+        <div class="ops-int-card-title-wrap">
+          <h3 class="ops-int-card-title">${ops.escapeHtml(row.label)}</h3>
+          <span class="ops-int-pill ${ops.escapeHtml(row.status)}">${ops.escapeHtml(ops.integrationStatusLabel(row.status))}</span>
+        </div>
       </div>
-      <p class="ops-meta">${ops.escapeHtml(userMsg)}</p>
-      <p class="ops-meta">${row.lastTestAt ? `Son test: ${ops.formatTime(row.lastTestAt)}` : 'Henüz test edilmedi'}</p>`;
+      <p class="ops-int-card-msg">${ops.escapeHtml(userMsg)}</p>
+      <p class="ops-int-card-meta">${row.lastTestAt ? `Son test: ${ops.formatTime(row.lastTestAt)}` : 'Henüz test edilmedi'}</p>
+      <span class="ops-int-card-cta">Ayarları aç →</span>`;
     card.addEventListener('click', () => openChannel(row.channel));
     integrationCards.appendChild(card);
 
@@ -82,10 +312,25 @@ function renderCards(integrations) {
   }
 }
 
-async function loadList() {
-  const data = await ops.api('/ops/v1/integrations');
-  webhooks = data.webhooks?.endpoints || null;
-  renderCards(data.integrations || []);
+async function loadList(options = {}) {
+  const silent = Boolean(options.silent);
+  if (!silent) {
+    window.PfStatus?.loading?.('Kanallar yükleniyor', 'Bağlantı durumları kontrol ediliyor');
+  }
+  try {
+    const data = await ops.api('/ops/v1/integrations');
+    webhooks = data.webhooks?.endpoints || null;
+    renderCards(data.integrations || []);
+    if (!silent) {
+      const count = (data.integrations || []).length;
+      window.PfStatus?.success?.('Kanallar hazır', `${count} kanal listelendi`);
+    }
+  } catch (error) {
+    if (!silent) {
+      window.PfStatus?.error?.('Kanallar yüklenemedi', error.message);
+    }
+    throw error;
+  }
 }
 
 function applyShadowLocks() {
@@ -137,6 +382,9 @@ function renderSetupChecklist(checklist) {
 
 function renderDetailForm(detail) {
   const { meta, config, guide, enabled, status } = detail;
+  if (detailLogo) {
+    detailLogo.innerHTML = renderChannelLogoHtml(detail.channel, 'lg');
+  }
   detailTitle.textContent = meta.label;
   detailSummary.textContent = ops.gateUserMessage(meta.gate, meta.gateNote);
   detailStatus.textContent = ops.integrationStatusLabel(status || 'missing');
@@ -210,6 +458,7 @@ function renderDetailForm(detail) {
 
   testResult.textContent = '';
   testResult.className = 'ops-feedback';
+  renderCapabilities(detail.channel);
 }
 
 async function openChannel(channel) {
@@ -249,6 +498,17 @@ configForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   if (!currentChannel) return;
 
+  const channelLabel = detailTitle?.textContent || 'Bu mağaza';
+  const enabled = enabledToggle.checked;
+  const ok = await ops.confirmAction({
+    title: `${channelLabel} ayarlarını kaydet?`,
+    body: enabled
+      ? 'Kaydettiğinizde mağaza etkinleştirilir ve bağlantı bilgileri uygulanır.'
+      : 'Mağaza kapalı olarak kaydedilecek; yeni sipariş alınmaz.',
+    confirmLabel: 'Kaydet'
+  });
+  if (!ok) return;
+
   try {
     const payload = {
       config: collectFormConfig(),
@@ -260,8 +520,9 @@ configForm.addEventListener('submit', async (event) => {
       body: JSON.stringify(payload)
     });
     ops.showToast('Ayarlar kaydedildi');
+    window.PfStatus?.success?.('Kanal ayarları kaydedildi');
     await openChannel(currentChannel);
-    await loadList();
+    await loadList({ silent: true });
   } catch (error) {
     ops.showToast(error.message);
   }
@@ -271,6 +532,7 @@ testBtn.addEventListener('click', async () => {
   if (!currentChannel) return;
   testResult.textContent = 'Test ediliyor...';
   testResult.className = 'ops-feedback';
+  window.PfStatus?.loading?.('Bağlantı test ediliyor');
 
   try {
     const data = await ops.api(`/ops/v1/integrations/${encodeURIComponent(currentChannel)}/test`, {
@@ -281,17 +543,29 @@ testBtn.addEventListener('click', async () => {
     testResult.className = data.ok ? 'ops-feedback ok' : 'ops-feedback err';
     detailStatus.textContent = ops.integrationStatusLabel(data.ok ? 'connected' : 'error');
     detailStatus.className = `ops-int-pill ${data.ok ? 'connected' : 'error'}`;
-    await loadList();
+    if (data.ok) {
+      window.PfStatus?.success?.('Bağlantı başarılı', data.message || 'Kanal erişilebilir');
+    } else {
+      window.PfStatus?.error?.('Bağlantı testi başarısız', data.message || 'Ayarları kontrol edin');
+    }
+    await loadList({ silent: true });
   } catch (error) {
     testResult.textContent = error.message;
     testResult.className = 'ops-feedback err';
+    window.PfStatus?.error?.('Bağlantı testi başarısız', error.message);
   }
 });
 
 backBtn.addEventListener('click', () => {
   showListView();
   loadList();
+  loadControlBoard();
 });
+
+saveWorkerSettingsBtn?.addEventListener('click', () => saveWorkerSettings());
+runPollBtn?.addEventListener('click', () => runWorkerAction('ops-poll'));
+runMatchingBtn?.addEventListener('click', () => runWorkerAction('matching-sync'));
+runDailyBtn?.addEventListener('click', () => runWorkerAction('daily-sync'));
 
 async function init() {
   ops.ensureAuth(bootstrap.authRequired);
@@ -300,6 +574,7 @@ async function init() {
     onRefresh: () => (currentChannel ? openChannel(currentChannel) : loadList())
   });
   await ops.loadOpsConfig();
+  await loadControlBoard();
 
   const initialChannel = new URLSearchParams(window.location.search).get('channel');
   if (initialChannel) {
@@ -308,6 +583,15 @@ async function init() {
     showListView();
     await loadList();
   }
+
+  window.onPanelRefresh = async () => {
+    await loadControlBoard();
+    if (currentChannel) {
+      await openChannel(currentChannel);
+    } else {
+      await loadList({ silent: true });
+    }
+  };
 }
 
 init().catch((error) => ops.showToast(error.message));

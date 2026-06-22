@@ -1,6 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeYemeksepetiOrder } from '../lib/channels/yemeksepeti-orders.js';
+import {
+  isYemeksepetiOrderUuid,
+  normalizeYemeksepetiOrder
+} from '../lib/channels/yemeksepeti-orders.js';
+
+test('isYemeksepetiOrderUuid accepts UUID v4 format', () => {
+  assert.equal(isYemeksepetiOrderUuid('9d4a63b5-3e07-4440-96af-aa04797da3a0'), true);
+  assert.equal(isYemeksepetiOrderUuid('ys-wh-test-001'), false);
+});
 
 test('normalizeYemeksepetiOrder derives gross from line items when payment missing', () => {
   const row = normalizeYemeksepetiOrder({

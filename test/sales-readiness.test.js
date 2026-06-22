@@ -10,7 +10,7 @@ function makeDb() {
   return db;
 }
 
-test('buildChannelSalesReadiness nextSteps link to Gelen Kutusu filters', () => {
+test('buildChannelSalesReadiness nextSteps link to hzlmrktops products', () => {
   const db = makeDb();
   db.productMatching.channelProducts.push(
     { channelId: 'yemeksepeti', channelProductId: 'ys-1', channelBarcode: '111', channelName: 'A' },
@@ -40,7 +40,6 @@ test('buildChannelSalesReadiness nextSteps link to Gelen Kutusu filters', () => 
 
   const missing = readiness.nextSteps.find((s) => s.action === 'review_missing_master');
   const review = readiness.nextSteps.find((s) => s.action === 'resolve_conflicts');
-  assert.match(missing?.href || '', /channelId=yemeksepeti/);
-  assert.match(missing?.href || '', /missing_master/);
-  assert.match(review?.href || '', /manual_review/);
+  assert.match(missing?.href || '', /\/hzlmrktops\/urunler/);
+  assert.match(review?.href || '', /\/hzlmrktops\/urunler/);
 });

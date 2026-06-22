@@ -1,5 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { ensureProductMatching } from '../lib/product-matching/schema.js';
+import { buildChannelSaleFromOrder } from '../lib/benimpos/sales-create.js';
 import {
   mapOpsChannelToBuybox,
   opsOrderToBenimposPackage
@@ -50,4 +52,59 @@ test('buildBenimposSaleSimulation marks dry run', () => {
 test('isBenimposSaleWriteEnabled reads env flag', () => {
   assert.equal(isBenimposSaleWriteEnabled({ FF_BENIMPOS_SALE_WRITE: 'false' }), false);
   assert.equal(isBenimposSaleWriteEnabled({ FF_BENIMPOS_SALE_WRITE: 'true' }), true);
+});
+
+test('opsOrderToBenimposPackage uses TGO list unit for BenimPOS terazi lines', () => {
+  const pkg = opsOrderToBenimposPackage(
+    {
+      channel: 'trendyol_go',
+      display_id: '11343529986',
+      external_id: 'ext-tgo',
+      raw_payload: {
+        tgoSourceLines: [{
+          barcode: 'PTFX027',
+          price: 300,
+          amount: 300,
+          items: [{ id: '1' }, { id: '2' }]
+        }]
+      }
+    },
+    [{
+      barcode: 'PTFX027',
+      title: 'Somonlu Kısırlaştırılmış Kedi Maması Açık 500 Gr',
+      quantity: 2,
+      unit_price: 150
+    }]
+  );
+
+  assert.equal(pkg.lines[0].lineUnitPrice, 150);
+  assert.equal(pkg.lines[0].listUnitPrice, 300);
+  assert.equal(pkg.lines[0].price, 300);
+});
+
+test('buildChannelSaleFromOrder allowEmpty returns blocked preview instead of throwing', () => {
+  const db = { products: [] };
+  ensureProductMatching(db);
+  db.productMatching.channelProducts.push({
+    channelId: 'getir',
+    channelProductId: 'sku-x',
+    channelBarcode: null,
+    channelName: 'Eslesmemis'
+  });
+
+  const orderPackage = opsOrderToBenimposPackage(
+    { display_id: 'G-1', external_id: 'ext-1' },
+    [{ barcode: null, title: 'Eslesmemis', quantity: 1, unit_price: 10, matching_status: 'unmapped' }]
+  );
+
+  const built = buildChannelSaleFromOrder(orderPackage, db, {
+    channelId: 'getir',
+    salePolicy: 'sale-strict',
+    allowEmpty: true
+  });
+
+  assert.equal(built.saleBlocked, true);
+  assert.equal(built.saleLines.length, 0);
+  assert.ok(built.skippedLines.length >= 1);
+  assert.equal(built.payload, null);
 });

@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   buildChannelStatusSimulation,
-  isChannelStatusWriteEnabled
+  isChannelStatusWriteEnabled,
+  resolveNextChannelStatus
 } from '../lib/ops-hub/channel/channel-status-service.js';
 import { resolveYsReadyStatus } from '../lib/ops-hub/channels/yemeksepeti-status-write.js';
 
@@ -23,6 +24,18 @@ test('buildChannelStatusSimulation marks dry run', () => {
   );
   assert.equal(sim.dryRun, true);
   assert.equal(sim.action, 'ready');
+});
+
+test('resolveNextChannelStatus maps Getir lifecycle', () => {
+  assert.equal(resolveNextChannelStatus({ channel: 'getir' }, 'accept'), '550');
+  assert.equal(
+    resolveNextChannelStatus({ channel: 'getir', delivery_mode: 'own_courier' }, 'ready'),
+    '600'
+  );
+  assert.equal(
+    resolveNextChannelStatus({ channel: 'getir', delivery_mode: 'platform_courier' }, 'ready'),
+    '700'
+  );
 });
 
 test('isChannelStatusWriteEnabled reads env flag', () => {

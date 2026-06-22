@@ -10,15 +10,21 @@
   margin: 0 0 6px;
   font-size: 1.5rem;
   font-weight: 700;
+  color: var(--pf-brand-primary);
+  letter-spacing: -0.02em;
+}
+
+.pf-page-header--qc h1 {
+  font-size: 1.65rem;
 }
 
 .pf-page-eyebrow {
   margin: 0 0 4px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--pf-text-secondary);
+  color: var(--pf-brand-accent-strong);
 }
 
 .pf-page-lead {
@@ -72,6 +78,15 @@
 .pf-kpi-trend--up { color: var(--pf-status-ok); }
 .pf-kpi-trend--down { color: var(--pf-status-danger); }
 .pf-kpi-trend--warn { color: var(--pf-status-warn); }
+
+.kpi-trend {
+  font-size: 0.7rem;
+  margin-left: 4px;
+  font-weight: 700;
+  vertical-align: middle;
+}
+.kpi-trend--up { color: var(--pf-status-ok); }
+.kpi-trend--down { color: var(--pf-status-danger); }
 
 .pf-kpi-card--ok .pf-kpi-value { color: var(--pf-status-ok); }
 .pf-kpi-card--warn .pf-kpi-value { color: var(--pf-status-warn); }
@@ -231,6 +246,36 @@
   margin-bottom: 16px;
 }
 
+.pf-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 48px 24px;
+  text-align: center;
+  color: var(--pf-text-secondary);
+}
+
+.pf-empty-icon { font-size: 2.2rem; }
+
+.pf-empty-state strong {
+  color: var(--pf-text-primary);
+  font-size: 1.05rem;
+}
+
+.pf-empty-state p {
+  margin: 0;
+  max-width: 420px;
+  font-size: 0.88rem;
+}
+
+.pf-empty-state .pf-btn-ghost {
+  margin-top: 6px;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+}
+
 @media (max-width: 1100px) {
   .pf-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
@@ -338,4 +383,190 @@
 @media (max-width: 640px) {
   .pf-kpi-grid { grid-template-columns: 1fr; }
   .pf-page-header { flex-direction: column; }
+  .pf-shipping-grid { gap: 12px; }
+  .pf-shipping-actions { flex-direction: column; align-items: stretch; }
+  .pf-shipping-actions .pf-btn-primary-sm,
+  .pf-shipping-actions .pf-btn-ghost-sm { justify-content: center; text-align: center; }
 }
+
+/* ── Global status strip (yükleme / ilerleme / sonuç) ── */
+.pf-status-strip {
+  margin: 0;
+  border-bottom: 1px solid var(--pf-border, #e2e8f0);
+  background: #f8fafc;
+  animation: pfStatusIn 0.2s ease;
+}
+
+.pf-status-strip.hidden { display: none !important; }
+
+.pf-status-strip-inner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 20px;
+  max-width: 100%;
+}
+
+.pf-status-strip-icon {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  position: relative;
+}
+
+.pf-status-strip--loading .pf-status-strip-icon {
+  border: 2px solid #cbd5e1;
+  border-top-color: var(--pf-brand-primary, #5c4033);
+  animation: pfStatusSpin 0.75s linear infinite;
+}
+
+.pf-status-strip--progress .pf-status-strip-icon {
+  border: 2px solid #bfdbfe;
+  border-top-color: #2563eb;
+  animation: pfStatusSpin 0.85s linear infinite;
+}
+
+.pf-status-strip--success .pf-status-strip-icon {
+  background: #dcfce7;
+  border: 2px solid #86efac;
+}
+
+.pf-status-strip--success .pf-status-strip-icon::after {
+  content: '';
+  position: absolute;
+  left: 6px;
+  top: 3px;
+  width: 6px;
+  height: 11px;
+  border: solid #15803d;
+  border-width: 0 2.5px 2.5px 0;
+  transform: rotate(45deg);
+}
+
+.pf-status-strip--error .pf-status-strip-icon {
+  background: #fee2e2;
+  border: 2px solid #fca5a5;
+}
+
+.pf-status-strip--error .pf-status-strip-icon::before,
+.pf-status-strip--error .pf-status-strip-icon::after {
+  content: '';
+  position: absolute;
+  left: 10px;
+  top: 5px;
+  width: 2px;
+  height: 12px;
+  background: #b91c1c;
+  border-radius: 1px;
+}
+
+.pf-status-strip--error .pf-status-strip-icon::before { transform: rotate(45deg); }
+.pf-status-strip--error .pf-status-strip-icon::after { transform: rotate(-45deg); }
+
+.pf-status-strip-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 10px;
+  font-size: 0.875rem;
+}
+
+.pf-status-strip-text strong {
+  font-weight: 700;
+  color: var(--pf-text-primary, #0f172a);
+}
+
+.pf-status-strip-text span {
+  color: var(--pf-text-secondary, #64748b);
+}
+
+.pf-status-strip--success {
+  background: #f0fdf4;
+  border-bottom-color: #bbf7d0;
+}
+
+.pf-status-strip--error {
+  background: #fef2f2;
+  border-bottom-color: #fecaca;
+}
+
+.pf-status-strip-dismiss {
+  border: none;
+  background: transparent;
+  color: var(--pf-text-secondary, #64748b);
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+
+.pf-status-strip-dismiss:hover {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.pf-status-strip-track {
+  height: 3px;
+  background: #e2e8f0;
+  overflow: hidden;
+}
+
+.pf-status-strip-track.is-indeterminate .pf-status-strip-bar {
+  width: 35% !important;
+  animation: pfStatusIndeterminate 1.2s ease-in-out infinite;
+}
+
+.pf-status-strip-bar {
+  height: 100%;
+  width: 0;
+  background: linear-gradient(90deg, var(--pf-brand-primary, #5c4033), var(--pf-brand-accent, #e8a598));
+  transition: width 0.25s ease;
+}
+
+.pf-status-strip--success .pf-status-strip-bar {
+  background: linear-gradient(90deg, #16a34a, #4ade80);
+}
+
+.pf-status-strip--error .pf-status-strip-bar {
+  background: #ef4444;
+}
+
+body.pf-status-active #pfRefreshBtn {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+@keyframes pfStatusSpin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes pfStatusIndeterminate {
+  0% { transform: translateX(-120%); }
+  100% { transform: translateX(320%); }
+}
+
+@keyframes pfStatusIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.pf-kpi-card.is-loading .ops-kpi-value,
+.pf-kpi-card.is-loading .ops-kpi-value--mode {
+  color: transparent;
+  background: linear-gradient(90deg, #e2e8f0 25%, #f1f5f9 50%, #e2e8f0 75%);
+  background-size: 200% 100%;
+  animation: pfSkeleton 1.2s ease-in-out infinite;
+  border-radius: 6px;
+  min-height: 1.4rem;
+  min-width: 3rem;
+  display: inline-block;
+}
+
+@keyframes pfSkeleton {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+

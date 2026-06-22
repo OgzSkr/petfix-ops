@@ -1,34 +1,40 @@
 :root {
   color-scheme: light;
 
-  --pf-brand-primary: #5c4033;
-  --pf-brand-accent: #e8a598;
-  --pf-brand-accent-strong: #d4897a;
-  --pf-brand-coral: #e07a5f;
+  /* PetFix kurumsal — lacivert + altın */
+  --pf-brand-primary: #002147;
+  --pf-brand-primary-soft: #0a2d5c;
+  --pf-brand-accent: #c59434;
+  --pf-brand-accent-strong: #a67c2e;
+  --pf-brand-accent-soft: #e8c872;
+  --pf-brand-coral: #c59434;
 
-  --pf-bg-app: #f4f6f8;
+  --pf-bg-app: #eef1f6;
   --pf-bg-surface: #ffffff;
-  --pf-bg-muted: #f8fafc;
-  --pf-bg-nav: #1e293b;
-  --pf-bg-nav-hover: rgba(255, 255, 255, 0.08);
-  --pf-border: #e2e8f0;
-  --pf-border-strong: #cbd5e1;
+  --pf-bg-muted: #f4f6fa;
+  --pf-bg-nav: #001833;
+  --pf-bg-nav-elevated: #0a2240;
+  --pf-bg-nav-hover: rgba(255, 255, 255, 0.07);
+  --pf-border: #dde3ec;
+  --pf-border-strong: #c5cedb;
 
-  --pf-text-primary: #0f172a;
-  --pf-text-secondary: #64748b;
+  --pf-text-primary: #0b1f33;
+  --pf-text-secondary: #5c6b7f;
   --pf-text-inverse: #f8fafc;
 
-  --pf-status-ok: #2d8a4e;
-  --pf-status-warn: #d97706;
-  --pf-status-danger: #dc2626;
-  --pf-status-info: #2563eb;
+  --pf-status-ok: #1f7a45;
+  --pf-status-warn: #b45309;
+  --pf-status-danger: #c53030;
+  --pf-status-info: #1e4d8c;
 
-  --pf-font: Inter, system-ui, -apple-system, sans-serif;
+  --pf-font: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --pf-radius-sm: 8px;
   --pf-radius-md: 12px;
   --pf-radius-lg: 16px;
-  --pf-shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
-  --pf-shadow-md: 0 4px 16px rgba(15, 23, 42, 0.08);
-  --pf-sidebar-width: 248px;
+  --pf-shadow-sm: 0 1px 2px rgba(0, 33, 71, 0.06);
+  --pf-shadow-md: 0 8px 24px rgba(0, 33, 71, 0.08);
+  --pf-shadow-nav: 4px 0 24px rgba(0, 0, 0, 0.18);
+  --pf-sidebar-width: 92px;
+  --pf-sidebar-width-expanded: 268px;
   --pf-drawer-width: 420px;
 }

@@ -1,123 +1,128 @@
 'use strict';
 
 const bootstrap = window.__OPS_DASHBOARD__ || { authRequired: true };
-const ops = window.OpsCommon;
 
-const kpiPending = document.getElementById('kpiPending');
-const kpiPicking = document.getElementById('kpiPicking');
-const kpiChannels = document.getElementById('kpiChannels');
-const kpiAlerts = document.getElementById('kpiAlerts');
-const urgentOrders = document.getElementById('urgentOrders');
-const urgentEmpty = document.getElementById('urgentEmpty');
-const channelSummary = document.getElementById('channelSummary');
-const shadowOrderCount = document.getElementById('shadowOrderCount');
-const shadowDayCount = document.getElementById('shadowDayCount');
-const shadowIssueCount = document.getElementById('shadowIssueCount');
-const shadowReadyLabel = document.getElementById('shadowReadyLabel');
-const shadowOrderProgress = document.getElementById('shadowOrderProgress');
-const shadowReadinessNote = document.getElementById('shadowReadinessNote');
-const shadowIssueList = document.getElementById('shadowIssueList');
-
-async function loadShadowReadiness(allOrders, shadowReport) {
-  const total = shadowReport?.orders?.total ?? allOrders.length;
-  const issues = shadowReport?.events?.issues ?? 0;
-  const days = ops.computeShadowDays(allOrders);
-  const ordersOk = total >= ops.SHADOW_MIN_ORDERS;
-  const daysOk = days >= ops.SHADOW_MIN_DAYS;
-  const issuesOk = issues === 0;
-  const ready = ordersOk && daysOk && issuesOk;
-
-  shadowOrderCount.textContent = String(total);
-  shadowDayCount.textContent = String(days);
-  shadowIssueCount.textContent = String(issues);
-  shadowReadyLabel.textContent = ready ? 'Hazır' : 'Devam';
-  shadowReadyLabel.style.color = ready ? 'var(--ops-status-ok)' : 'var(--ops-status-warn)';
-
-  const pct = Math.min(100, Math.round((total / ops.SHADOW_MIN_ORDERS) * 100));
-  shadowOrderProgress.style.width = `${pct}%`;
-
-  const notes = [];
-  if (!ordersOk) notes.push(`${ops.SHADOW_MIN_ORDERS - total} sipariş daha shadow deneyimi önerilir.`);
-  if (!daysOk) notes.push(`${ops.SHADOW_MIN_DAYS - days} gün daha izleme önerilir.`);
-  if (!issuesOk) notes.push('Eşleştirme uyarıları giderilmeli.');
-  if (ready) notes.push('Kriterler karşılandı — yönetici canlı flag’leri açabilir.');
-  shadowReadinessNote.textContent = notes.join(' ');
-
-  const recent = shadowReport?.recentIssues || [];
-  shadowIssueList.innerHTML = recent.length
-    ? recent
-        .slice(0, 5)
-        .map(
-          (item) =>
-            `<li>${ops.escapeHtml(ops.shadowIssueLabel(item.payload))} — sipariş ${ops.escapeHtml(String(item.orderId || '').slice(0, 8))}…</li>`
-        )
-        .join('')
-    : '<li class="ops-meta">Açık shadow uyarısı yok.</li>';
+function getOps() {
+  return window.OpsCommon || null;
 }
 
-async function loadDashboard() {
+function getEl(id) {
+  return document.getElementById(id);
+}
+
+function renderRecentActivity(events = []) {
+  const feed = getEl('recentActivityFeed');
+  const ops = getOps();
+  if (!feed || !ops) return;
+  if (!events.length) {
+    feed.innerHTML = '<li class="ops-meta">Henüz kayıtlı hareket yok. Siparişler gelmeye başladığında burada görünür.</li>';
+    return;
+  }
+  feed.innerHTML = events
+    .slice(0, 5)
+    .map((event) => {
+      const channel = event.channelLabel ? `${ops.escapeHtml(event.channelLabel)} · ` : '';
+      return `<li class="ops-activity-item ops-activity-item--${event.ok === false ? 'error' : 'ok'}">
+        <div class="ops-activity-body">
+          <div class="ops-activity-title">${channel}${ops.escapeHtml(event.title)}</div>
+          <div class="ops-activity-detail">${ops.escapeHtml(event.detail || '')}</div>
+          <time class="ops-meta">${ops.formatTime(event.at)}</time>
+        </div>
+      </li>`;
+    })
+    .join('');
+}
+
+async function loadRecentActivity() {
+  const feed = getEl('recentActivityFeed');
+  const authFetch = window.BuyBoxCommon?.authFetch?.bind(window.BuyBoxCommon);
+  if (!feed || !authFetch) return;
   try {
-    const [ordersRes, integrationsRes, allOrdersRes, shadowRes] = await Promise.all([
-      ops.api('/ops/v1/orders?queue=picking&limit=100'),
-      ops.api('/ops/v1/integrations'),
-      ops.api('/ops/v1/orders?limit=200'),
-      ops.api('/ops/v1/shadow/report').catch(() => ({ report: null }))
-    ]);
+    const response = await authFetch('/api/ops/activity-feed?limit=5');
+    const data = await response.json();
+    if (response.ok) renderRecentActivity(data.events || []);
+  } catch {
+    feed.innerHTML = '<li class="ops-meta">Aktivite yüklenemedi.</li>';
+  }
+}
 
-    const orders = ordersRes.orders || [];
-    const allOrders = allOrdersRes.orders || [];
-    const integrations = integrationsRes.integrations || [];
-    const shadowReport = shadowRes.report;
+function renderModeKpi(mode) {
+  const kpiMode = getEl('kpiMode');
+  const kpiModeHint = getEl('kpiModeHint');
+  if (!kpiMode || !mode) return;
+  const isShadow = mode.mode === 'shadow';
+  kpiMode.textContent = isShadow ? 'Eğitim' : 'Canlı';
+  kpiMode.className = `ops-kpi-value ops-kpi-value--mode ops-kpi-value--${isShadow ? 'shadow' : 'live'}`;
+  if (kpiModeHint) {
+    kpiModeHint.textContent = isShadow
+      ? 'Gerçek sipariş ve kasa işlemi yapılmaz'
+      : 'Onayladığınız işlemler gerçek sisteme yazılır';
+  }
+}
 
-    const received = orders.filter((o) => o.status === 'received').length;
-    const picking = orders.filter((o) => o.status === 'picking').length;
-    const connected = integrations.filter((i) => i.status === 'connected').length;
-    const alerts = integrations.filter((i) => i.status === 'error' || i.status === 'missing').length;
+function renderPollNote(poll) {
+  const pollStatusNote = getEl('pollStatusNote');
+  const ops = getOps();
+  if (!pollStatusNote || !poll || !ops) return;
+  if (!poll.enabled) {
+    pollStatusNote.textContent = 'Otomatik sipariş çekme kapalı — açmak için Kanallar sayfasındaki otomasyon bölümüne bakın.';
+    return;
+  }
+  const last = poll.lastRunAt ? ops.formatTime(poll.lastRunAt) : 'henüz yok';
+  const state = poll.lastRunOk === false ? 'son kontrol hatalı' : 'düzenli çalışıyor';
+  pollStatusNote.textContent = `Siparişler ${state} · son kontrol: ${last}`;
+}
 
-    kpiPending.textContent = String(received + picking);
-    kpiPicking.textContent = String(picking);
-    kpiChannels.textContent = String(connected);
-    kpiAlerts.textContent = String(alerts);
+function setKpiLoading(active) {
+  document.querySelectorAll('#kpiRow .ops-kpi-card').forEach((card) => {
+    card.classList.toggle('is-loading', active);
+  });
+}
 
-    await loadShadowReadiness(allOrders, shadowReport);
+async function loadDashboard(options = {}) {
+  const silent = Boolean(options.silent);
+  const ops = getOps();
+  const channelSummary = getEl('channelSummary');
+  const kpiChannels = getEl('kpiChannels');
+  const kpiAlerts = getEl('kpiAlerts');
+  if (!ops) return;
 
-    const urgent = orders
-      .map((order) => ({
-        order,
-        sla: ops.computeSla(order.orderedAt || order.ordered_at)
-      }))
-      .filter((row) => row.sla.level !== 'normal')
-      .sort((a, b) => b.sla.minutes - a.sla.minutes)
-      .slice(0, 5);
+  if (!silent) {
+    setKpiLoading(true);
+    window.PfStatus?.loading?.('Ana panel yükleniyor', 'Kanal durumu kontrol ediliyor');
+  }
 
-    urgentOrders.innerHTML = '';
-    if (!urgent.length) {
-      urgentEmpty.classList.remove('hidden');
-    } else {
-      urgentEmpty.classList.add('hidden');
-      for (const { order, sla } of urgent) {
-        const displayId = order.displayId || order.display_id;
-        const card = document.createElement('a');
-        card.href = `/ops/?order=${encodeURIComponent(order.id)}`;
-        card.className = `ops-order-card ops-order-card--${sla.level === 'critical' ? 'critical' : 'warn'}`;
-        card.style.textDecoration = 'none';
-        card.style.color = 'inherit';
-        card.innerHTML = `
-          <div class="ops-order-card-top">
-            <span class="ops-order-card-id">#${ops.escapeHtml(displayId)}</span>
-            <span class="${ops.channelBadgeClass(order.channel)}">${ops.escapeHtml(ops.channelLabel(order.channel))}</span>
-          </div>
-          <div class="ops-order-card-meta">
-            <span class="ops-sla-badge${sla.level === 'critical' ? ' ops-sla-badge--critical' : ''}">⏱ ${ops.escapeHtml(sla.label)}</span>
-          </div>`;
-        urgentOrders.appendChild(card);
+  try {
+    const authFetch = window.BuyBoxCommon?.authFetch?.bind(window.BuyBoxCommon);
+    const integrationsRes = await ops.api('/ops/v1/integrations');
+    let modeRes = null;
+    if (authFetch) {
+      try {
+        const response = await authFetch('/api/ops/system-mode');
+        modeRes = await response.json();
+      } catch {
+        modeRes = null;
       }
     }
 
-    channelSummary.innerHTML = integrations
-      .map((row) => {
-        const msg = ops.gateUserMessage(row.gate, row.gateNote);
-        return `
+    const integrations = integrationsRes.integrations || [];
+    const connected = integrations.filter((i) => i.status === 'connected').length;
+    const alerts = integrations.filter((i) => i.status === 'error' || i.status === 'missing').length;
+
+    if (kpiChannels) kpiChannels.textContent = String(connected);
+    if (kpiAlerts) kpiAlerts.textContent = String(alerts);
+
+    if (modeRes?.ok) {
+      renderModeKpi(modeRes);
+      renderPollNote(modeRes.poll);
+    }
+
+    if (channelSummary) {
+      channelSummary.innerHTML = integrations.length
+        ? integrations
+            .map((row) => {
+              const msg = ops.gateUserMessage(row.gate, row.gateNote);
+              return `
           <div class="ops-health-row">
             <div>
               <strong>${ops.escapeHtml(row.label)}</strong>
@@ -125,19 +130,49 @@ async function loadDashboard() {
             </div>
             <span class="ops-int-pill ${ops.escapeHtml(row.status)}">${ops.escapeHtml(ops.integrationStatusLabel(row.status))}</span>
           </div>`;
-      })
-      .join('');
+            })
+            .join('')
+        : '<p class="ops-meta">Kanal bilgisi yok.</p>';
+    }
+
+    await loadRecentActivity();
+
+    if (!silent) {
+      const detail = alerts > 0
+        ? `${connected} açık kanal · ${alerts} kurulum uyarısı`
+        : `${connected} açık kanal`;
+      window.PfStatus?.success?.('Ana panel hazır', detail);
+    }
   } catch (error) {
-    ops.showToast(error.message);
+    if (!silent) {
+      window.PfStatus?.error?.('Ana panel yüklenemedi', error.message || 'Bilinmeyen hata');
+    }
+    ops.showToast(error.message || 'Panel yüklenemedi');
+    throw error;
+  } finally {
+    setKpiLoading(false);
   }
 }
 
 async function init() {
+  const ops = getOps();
+  if (!ops) {
+    console.error('[ops-dashboard] OpsCommon yüklenemedi');
+    return;
+  }
+
   ops.ensureAuth(bootstrap.authRequired);
   ops.bindShellControls({ authRequired: bootstrap.authRequired, onRefresh: loadDashboard });
-  await ops.loadOpsConfig();
+  await ops.loadOpsConfig().catch(() => {});
   await loadDashboard();
-  ops.startAutoRefresh(loadDashboard, 45000);
+  ops.startAutoRefresh(() => loadDashboard({ silent: true }), 60000);
+  window.onPanelRefresh = () => loadDashboard({ silent: true });
 }
 
-init().catch((error) => ops.showToast(error.message));
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => {
+    init().catch((error) => getOps()?.showToast?.(error.message || String(error)));
+  });
+} else {
+  init().catch((error) => getOps()?.showToast?.(error.message || String(error)));
+}

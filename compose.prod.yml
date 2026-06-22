@@ -41,9 +41,14 @@ services:
       PETFIX_ENV_FILE: .env.production
       HOST: 0.0.0.0
       PORT: 8787
-      OPS_POSTGRES_URL: postgresql://${POSTGRES_USER:-petfix}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-petfix_ops}
+      NODE_OPTIONS: --max-old-space-size=1536
+      # OPS_POSTGRES_URL — env_file'dan gelir; ${POSTGRES_PASSWORD} interpolation $ içeren secret'ları bozar
     ports:
       - '127.0.0.1:8787:8787'
+    volumes:
+      # Host data/ → container; deploy sonrası: chown -R 100:101 data (Alpine petfix uid)
+      - ./data:/app/data
+      - ./.env.production:/app/.env.production:ro
     networks:
       - petfix_prod
     healthcheck:

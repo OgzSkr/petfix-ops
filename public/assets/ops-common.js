@@ -38,7 +38,7 @@ window.OpsCommon = (() => {
     G1: 'Siparişler alınıyor',
     G2: 'Stok güncelleme henüz kapalı',
     G3: 'Bağlantı bilgileri eksik',
-    G4: 'Webhook kurulumu gerekli'
+    G4: 'Partner panelinde webhook kurulumu gerekli'
   };
 
   const HEALTH_RESULT_LABELS = {
@@ -49,6 +49,15 @@ window.OpsCommon = (() => {
 
   let opsConfig = { shadowModeDefault: true, flags: {} };
   let refreshTimer = null;
+  const BRANCH_STORAGE_KEY = 'pf_ops_branch_id';
+
+  function getActiveBranchId() {
+    try {
+      return localStorage.getItem(BRANCH_STORAGE_KEY) || '';
+    } catch {
+      return '';
+    }
+  }
 
   function escapeHtml(value) {
     return String(value ?? '')
@@ -174,7 +183,7 @@ window.OpsCommon = (() => {
       banner.classList.remove('hidden', 'ops-mode-banner--live');
       banner.classList.add('ops-mode-banner--shadow');
       if (text) {
-        text.textContent = 'Eğitim modu — gerçek kanal ve kasa işlemi yapılmaz';
+        text.textContent = 'Eğitim modu — deneme ortamı; gerçek sipariş ve kasa işlemi yapılmaz';
       }
     } else {
       banner.classList.remove('hidden', 'ops-mode-banner--shadow');
@@ -186,7 +195,13 @@ window.OpsCommon = (() => {
   }
 
   async function api(path, options = {}) {
-    const response = await common.authFetch(path, options);
+    let requestPath = path;
+    const branchId = getActiveBranchId();
+    if (branchId && requestPath.startsWith('/ops/')) {
+      const joiner = requestPath.includes('?') ? '&' : '?';
+      requestPath = `${requestPath}${joiner}branch=${encodeURIComponent(branchId)}`;
+    }
+    const response = await common.authFetch(requestPath, options);
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
       throw new Error(data.error || `İstek başarısız (${response.status})`);
@@ -195,7 +210,7 @@ window.OpsCommon = (() => {
   }
 
   function showToast(message) {
-    const toast = document.getElementById('toast');
+    const toast = document.getElementById('toast') || document.getElementById('pfToast');
     if (toast) common.showToast(toast, message);
   }
 
@@ -384,6 +399,7 @@ window.OpsCommon = (() => {
     loadOpsConfig,
     applyModeBanner,
     api,
+    getActiveBranchId,
     showToast,
     ensureAuth,
     bindShellControls,

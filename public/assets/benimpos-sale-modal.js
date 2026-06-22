@@ -17,6 +17,8 @@ const CHANNEL_LABEL = bootstrap.channelLabel || 'Kanal';
 let currentOrder = null;
 let currentPreview = null;
 let currentDays = 14;
+let currentChannelId = CHANNEL_ID;
+let currentChannelLabel = CHANNEL_LABEL;
 let masterSearchTimer = null;
 
 const STATUS_LABELS = {
@@ -43,13 +45,19 @@ window.BuyBoxBenimposSale = {
     if (!bootstrap.benimposSaleEnabled) return;
     currentOrder = orderRow;
     currentDays = days;
+    currentChannelId = orderRow.channel || orderRow.channelId || bootstrap.channelId || 'uber-eats';
+    currentChannelLabel = orderRow.channelLabel
+      || (currentChannelId === 'uber-eats' ? 'Uber Eats' : '')
+      || bootstrap.channelLabel
+      || 'Kanal';
     titleEl.textContent = `BenimPOS Ön İzleme — #${orderRow.orderNumber}`;
     bodyEl.innerHTML = '<p class="matching-loading">Eşleştirme kontrol ediliyor…</p>';
     actionsEl.hidden = true;
     confirmBtn.disabled = true;
     backdrop.classList.add('open');
     loadPreview();
-  }
+  },
+  close: closeBenimposSaleModal
 };
 
 async function loadPreview() {
@@ -57,8 +65,9 @@ async function loadPreview() {
     const response = await window.BuyBoxCommon.authFetch('/api/benimpos/preview-channel-sale', {
       method: 'POST',
       body: JSON.stringify({
-        channelId: CHANNEL_ID,
+        channelId: currentChannelId,
         orderNumber: currentOrder.orderNumber,
+        orderDateMs: currentOrder.orderDateMs || currentOrder.orderDate || null,
         days: currentDays
       })
     });
@@ -91,12 +100,13 @@ function renderPreview(data) {
           (readiness.nextSteps || []).map((s) =>
             `<a href="${esc(s.href)}" class="btn-mini">${esc(s.label)}</a>`
           ).join(' ') +
-          `<a href="/products?tab=${escAttr(CHANNEL_ID)}" class="btn-mini ghost">Ana Ürün Havuzu</a>` +
+          `<a href="/hzlmrktops/urunler?tab=${escAttr(currentChannelId)}" class="btn-mini ghost">Ana Ürün Havuzu</a>` +
         `</div></div>`;
   }
 
   const canSend = data.canSendRealSale ?? data.canSend;
   const summaryClass = canSend ? 'benimpos-summary benimpos-summary--ok' : 'benimpos-summary benimpos-summary--blocked';
+  const financialsHtml = renderFinancialSummary(data.financials);
   const summaryHtml =
     `<div class="${summaryClass}">` +
       `<strong>${canSend ? 'Eşleştirme tamam — gönderime hazır' : 'Eşleştirme eksik — gönderim engelli'}</strong>` +
@@ -109,9 +119,9 @@ function renderPreview(data) {
   const rows = (data.lines || []).map((line, idx) => renderPreviewRow(line, idx)).join('');
 
   bodyEl.innerHTML =
-    policyNote + readinessHtml + summaryHtml +
+    policyNote + readinessHtml + financialsHtml + summaryHtml +
     '<div class="benimpos-preview-table-wrap"><table class="benimpos-preview-table">' +
-    `<thead><tr><th>${esc(CHANNEL_LABEL)} ürün</th><th>BenimPOS</th><th>Stok</th><th>Alış</th><th>Eşleşme</th><th>Durum / İşlem</th></tr></thead>` +
+    `<thead><tr><th>${esc(currentChannelLabel)} ürün</th><th>BenimPOS</th><th>Adet</th><th>Birim Satış Fiyatı</th><th>Eşleşme</th><th>Durum / İşlem</th></tr></thead>` +
     `<tbody>${rows || '<tr><td colspan="6">Satır yok</td></tr>'}</tbody></table></div>`;
 
   bindPreviewRowActions();
@@ -119,6 +129,20 @@ function renderPreview(data) {
   actionsEl.hidden = false;
   confirmBtn.disabled = !canSend;
   confirmBtn.textContent = canSend ? 'BenimPOS\'a Gönder' : 'Eşleştirme Tamamlanmadan Gönderilemez';
+}
+
+function renderFinancialSummary(financials) {
+  if (!financials || !financials.grossAmount) return '';
+  return `<div class="benimpos-financials" aria-label="Uber finans özeti">
+    <strong>BenimPOS satış tutarı (Uber hakediş)</strong>
+    <div class="benimpos-financials-grid">
+      <span>Brüt fiyat</span><strong>₺${formatMoney(financials.grossAmount)}</strong>
+      <span>Satıcı indirimi</span><strong class="is-deduct">−₺${formatMoney(financials.sellerDiscount)}</strong>
+      <span>Komisyon</span><strong class="is-deduct">−₺${formatMoney(financials.commissionAmount)}</strong>
+      <span>Net hakediş</span><strong class="is-net">₺${formatMoney(financials.netAmount)}</strong>
+    </div>
+    <p class="muted benimpos-financials-note">Ürün satırları brüt fiyatla gider; indirim + komisyon BenimPOS <code>discountRate</code> (%${formatMoney(financials.discountRate)}) ile düşülür.</p>
+  </div>`;
 }
 
 function renderPreviewRow(line, idx) {
@@ -129,13 +153,22 @@ function renderPreviewRow(line, idx) {
     || '—';
   const actions = renderLineActions(line, idx, ok);
   const inlineMatch = !ok ? renderInlineMatchPanel(line, idx) : '';
+  const teraziHtml = line.teraziApplied && line.saleBarcode
+    ? `<div class="benimpos-line-meta benimpos-terazi-note">Terazi: ${esc(line.saleBarcode)} × ${esc(line.teraziSaleQuantity ?? line.quantity)} adet · ${esc(line.teraziOrderGrams)} g</div>`
+    : '';
+  const masterCell = line.masterName
+    ? `<div>${esc(line.masterName)}</div><div class="benimpos-line-meta">${esc(line.masterBarcode)}</div>${teraziHtml}`
+    : '—';
+
+  const saleQty = line.teraziSaleQuantity ?? line.quantity;
+  const saleUnitPrice = line.teraziSaleUnitPrice ?? line.unitPrice;
 
   return `<tr class="${rowClass}" data-line-idx="${idx}">
     <td><div class="benimpos-line-name">${esc(line.channelProductName || '—')}</div>
-      <div class="benimpos-line-meta">${esc(CHANNEL_LABEL)}: ${esc(line.channelBarcode)} · ${esc(line.quantity)} adet</div></td>
-    <td>${line.masterName ? `<div>${esc(line.masterName)}</div><div class="benimpos-line-meta">${esc(line.masterBarcode)}</div>` : '—'}</td>
-    <td>${line.stock != null ? esc(line.stock) : '—'}</td>
-    <td>${line.buyingPrice ? '₺' + formatMoney(line.buyingPrice) : '—'}</td>
+      <div class="benimpos-line-meta">${esc(currentChannelLabel)}: ${esc(line.channelBarcode)} · ${esc(line.quantity)} adet</div></td>
+    <td>${masterCell}</td>
+    <td>${saleQty != null && saleQty !== '' ? esc(formatQty(saleQty)) : '—'}</td>
+    <td>${saleUnitPrice != null && saleUnitPrice !== '' ? '₺' + formatMoney(saleUnitPrice) : '—'}</td>
     <td>${badge(line.mappingStatus, ok)}</td>
     <td class="benimpos-line-actions-cell">
       <span class="benimpos-warn">${esc(warn)}</span>
@@ -158,6 +191,20 @@ function renderLineActions(line, idx, ok) {
     );
   }
 
+  if (line.barcodeMasterProductId && line.channelProductId) {
+    parts.push(
+      `<div class="benimpos-barcode-match">` +
+        `<div class="benimpos-barcode-match-label">Ana barkoda benzerlik: ${esc(line.barcodeMasterBarcode || '—')}</div>` +
+        `<div class="benimpos-barcode-match-name">${esc(line.barcodeMasterName || '')}</div>` +
+        `<button type="button" class="btn-mini btn-barcode-match" data-idx="${idx}" ` +
+        `data-cp="${escAttr(line.channelProductId)}" ` +
+        `data-master="${escAttr(line.barcodeMasterProductId)}" ` +
+        `data-name="${escAttr(line.channelProductName || '')}" ` +
+        `data-barcode="${escAttr(line.channelBarcode || '')}">Barkoda eşleştir</button>` +
+      `</div>`
+    );
+  }
+
   if (line.needsInlineMatch || (!ok && line.mappingStatus !== 'auto_matched')) {
     parts.push(
       `<button type="button" class="btn-mini btn-toggle-inline-match" data-idx="${idx}">Burada eşleştir</button>`
@@ -174,7 +221,7 @@ function renderLineActions(line, idx, ok) {
 }
 
 function renderInlineMatchPanel(line, idx) {
-  const cpId = line.channelProductId || line.channelBarcode;
+  const cpId = line.channelProductId || line.channelBarcode || '';
   const seedQuery = line.suggestedMasterProductId
     ? (line.masterBarcode || line.channelBarcode || '')
     : (line.channelBarcode || line.channelProductName || '');
@@ -182,7 +229,7 @@ function renderInlineMatchPanel(line, idx) {
   return `<div class="benimpos-inline-match" id="inlineMatch-${idx}" hidden>
     <label class="benimpos-inline-label">Ana ürün ara (barkod veya ad)</label>
     <input type="search" class="benimpos-inline-search" data-idx="${idx}" data-cp="${escAttr(cpId)}"
-      data-name="${escAttr(line.channelProductName || '')}" value="${escAttr(seedQuery)}" placeholder="Royal Canin, 318255…">
+      data-name="${escAttr(line.channelProductName || '')}" data-barcode="${escAttr(line.channelBarcode || '')}" value="${escAttr(seedQuery)}" placeholder="Royal Canin, 318255…">
     <div class="benimpos-inline-results" id="inlineResults-${idx}"></div>
     <p class="muted benimpos-inline-hint">Onay sonrası ön izleme yenilenir; tüm satırlar yeşil olunca gönderebilirsiniz.</p>
   </div>`;
@@ -204,6 +251,10 @@ function bindPreviewRowActions() {
         searchMastersForLine(input);
       }
     });
+  });
+
+  bodyEl.querySelectorAll('.btn-barcode-match').forEach((btn) => {
+    btn.addEventListener('click', () => confirmInlineMapping(btn));
   });
 
   bodyEl.querySelectorAll('.benimpos-inline-search').forEach((input) => {
@@ -244,6 +295,7 @@ async function searchMastersForLine(input) {
   resultsEl.innerHTML = rows.slice(0, 8).map((row) =>
     `<button type="button" class="benimpos-inline-pick" data-idx="${escAttr(idx)}" ` +
     `data-cp="${escAttr(input.dataset.cp)}" data-name="${escAttr(input.dataset.name)}" ` +
+    `data-barcode="${escAttr(input.dataset.barcode || '')}" ` +
     `data-master="${escAttr(row.id)}">` +
     `<strong>${esc(row.name)}</strong>` +
     `<span class="muted">${esc(row.benimposBarcode)} · stok ${esc(row.stock)} · alış ₺${formatMoney(row.buyingPrice)}</span>` +
@@ -259,19 +311,22 @@ async function confirmInlineMapping(btn) {
   const channelProductId = btn.dataset.cp;
   const masterProductId = btn.dataset.master;
   const channelName = btn.dataset.name;
+  const channelBarcode = btn.dataset.barcode || channelProductId;
   btn.disabled = true;
 
   const response = await window.BuyBoxCommon.authFetch('/api/product-matching/confirm', {
     method: 'POST',
     body: JSON.stringify({
-      channelId: CHANNEL_ID,
+      channelId: currentChannelId,
       channelProductId,
-      channelBarcode: channelProductId,
+      channelBarcode,
       channelName,
       masterProductId,
       ensureChannelProduct: true,
       source: 'order_preview',
-      confirmedBy: 'order_inline_match'
+      confirmedBy: btn.classList.contains('btn-barcode-match')
+        ? 'order_preview_barcode_match'
+        : 'order_inline_match'
     })
   });
 
@@ -288,20 +343,24 @@ async function confirmInlineMapping(btn) {
 async function confirmLineMapping(btn) {
   const channelProductId = btn.dataset.cp;
   const masterProductId = btn.dataset.master;
+  const line = (currentPreview?.lines || [])[Number(btn.dataset.idx)] || null;
   btn.disabled = true;
   btn.textContent = 'Onaylanıyor…';
   const response = await window.BuyBoxCommon.authFetch('/api/product-matching/confirm', {
     method: 'POST',
     body: JSON.stringify({
-      channelId: CHANNEL_ID,
+      channelId: currentChannelId,
       channelProductId,
+      channelBarcode: line?.channelBarcode || channelProductId,
+      channelName: line?.channelProductName || '',
       masterProductId,
       ensureChannelProduct: true,
       source: 'order_preview'
     })
   });
   if (!response.ok) {
-    alert('Eşleştirme onaylanamadı.');
+    const err = await response.json().catch(() => ({}));
+    alert(err.error || 'Eşleştirme onaylanamadı.');
     btn.disabled = false;
     btn.textContent = 'Eşleştirmeyi Onayla';
     return;
@@ -321,7 +380,7 @@ async function submitBenimposSale() {
     const response = await window.BuyBoxCommon.authFetch('/api/benimpos/create-channel-sale', {
       method: 'POST',
       body: JSON.stringify({
-        channelId: CHANNEL_ID,
+        channelId: currentChannelId,
         orderNumber: currentOrder.orderNumber,
         days: currentDays,
         dryRun: false,
@@ -340,12 +399,16 @@ async function submitBenimposSale() {
       return;
     }
 
-    bodyEl.innerHTML =
-      `<div class="benimpos-summary benimpos-summary--ok"><strong>Satış oluşturuldu</strong>` +
-      `<span>Kod: ${esc(data.salesCode || '—')}</span></div>` +
-      `<p class="muted">${esc(data.message || '')}</p>`;
-    actionsEl.hidden = true;
-    window.BuyBoxCommon.showToast?.(document.getElementById('ordersToast'), `BenimPOS satış: ${data.salesCode || 'OK'}`);
+    const salesCode = data.salesCode || '';
+    const orderNumber = currentOrder?.orderNumber || '';
+    closeBenimposSaleModal();
+    window.dispatchEvent(new CustomEvent('buybox:benimpos-sale-success', {
+      detail: {
+        orderNumber,
+        salesCode,
+        message: data.message || ''
+      }
+    }));
   } catch (error) {
     alert(error.message || 'Hata');
     confirmBtn.disabled = false;
@@ -357,6 +420,11 @@ function closeBenimposSaleModal() {
   backdrop?.classList.remove('open');
   currentOrder = null;
   currentPreview = null;
+  if (confirmBtn) {
+    confirmBtn.disabled = false;
+    confirmBtn.textContent = 'BenimPOS\'a Gönder';
+  }
+  if (actionsEl) actionsEl.hidden = false;
 }
 
 function badge(status, ok) {
@@ -366,6 +434,12 @@ function badge(status, ok) {
 
 function formatMoney(v) {
   return Number(v || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function formatQty(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return String(v ?? '');
+  return n.toLocaleString('tr-TR', { maximumFractionDigits: 4 });
 }
 
 function esc(v) {

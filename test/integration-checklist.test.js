@@ -38,6 +38,8 @@ test('buildYemeksepetiSetupChecklist reports credential and catalog steps', asyn
   const webhook = checklist.items.find((i) => i.id === 'webhook_portal');
   assert.ok(webhook?.copyValue?.startsWith('Basic '));
   assert.match(webhook?.copyValue2 || '', /yemeksepeti\/orders/);
+  const catalogWebhook = checklist.items.find((i) => i.id === 'catalog_webhook_portal');
+  assert.match(catalogWebhook?.copyValue || '', /yemeksepeti\/catalog/);
 });
 
 test('buildTrendyolGoSetupChecklist reports TGO credentials and matching', async () => {

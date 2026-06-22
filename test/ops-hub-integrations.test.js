@@ -51,9 +51,13 @@ test('applySecretPreservation keeps existing secret when masked', () => {
   assert.equal(merged.sellerId, '99');
 });
 
-test('buildWebhookPanel uses public API base', () => {
-  const panel = buildWebhookPanel({ OPS_PUBLIC_API_BASE_URL: 'https://api.petfix.com.tr' });
-  assert.equal(panel.endpoints.yemeksepetiOrders, 'https://api.petfix.com.tr/webhooks/v1/yemeksepeti/orders');
+test('buildWebhookPanel uses public API base with branch slug', () => {
+  const panel = buildWebhookPanel({ OPS_PUBLIC_API_BASE_URL: 'https://api.petfix.com.tr' }, { branchSlug: 'main' });
+  assert.equal(
+    panel.endpoints.yemeksepetiOrders,
+    'https://api.petfix.com.tr/webhooks/v1/branches/main/yemeksepeti/orders'
+  );
+  assert.ok(panel.legacyEndpoints?.yemeksepetiOrders);
 });
 
 test('ensureWebhookSecret generates secret when missing', () => {

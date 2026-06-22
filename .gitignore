@@ -8,6 +8,7 @@ data/db.json
 data/db.json.bak-*
 data/*.bak-*
 data/platform.sqlite
+data/runtime-secrets.env
 data/backups/chrome-local-state/
 data/backups/chrome-repair/
 *.log
