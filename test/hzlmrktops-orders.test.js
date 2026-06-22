@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHzlMrktOpsOrdersService } from '../lib/platform/services/hzlmrktops-orders.js';
 
+const stubHealthCheck = async () => ({ configured: true, message: 'test stub' });
+
 test('listHzlMrktOpsOrders merges active channel rows and stats', async () => {
   const channelOrders = {
     async listChannelOrders(channelId) {
@@ -47,7 +49,7 @@ test('listHzlMrktOpsOrders merges active channel rows and stats', async () => {
     }
   };
 
-  const service = createHzlMrktOpsOrdersService({ channelOrders });
+  const service = createHzlMrktOpsOrdersService({ channelOrders, healthCheckForChannel: stubHealthCheck });
   const params = new URLSearchParams({ days: '14' });
   const result = await service.listHzlMrktOpsOrders(params);
 
@@ -73,7 +75,7 @@ test('listHzlMrktOpsOrders respects channel filter', async () => {
     }
   };
 
-  const service = createHzlMrktOpsOrdersService({ channelOrders });
+  const service = createHzlMrktOpsOrdersService({ channelOrders, healthCheckForChannel: stubHealthCheck });
   const params = new URLSearchParams({ days: '14', channel: 'uber-eats' });
   const result = await service.listHzlMrktOpsOrders(params);
 

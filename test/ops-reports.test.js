@@ -3,7 +3,36 @@ import assert from 'node:assert/strict';
 import { resolveReportPeriod } from '../lib/ops-hub/reports/ops-reports-service.js';
 import { buildProfitFootnote, buildOpsReportsProfit } from '../lib/ops-hub/reports/ops-reports-profit.js';
 import { listOpsCustomers } from '../lib/ops-hub/customers/customer-index-service.js';
-import { configureDbStore } from '../lib/db/store.js';
+import { ensureProductMatching } from '../lib/product-matching/schema.js';
+import { MAPPING_STATUS } from '../lib/product-matching/constants.js';
+
+function profitMatchingDb() {
+  const db = { productMatching: {} };
+  ensureProductMatching(db);
+  db.productMatching.masterProducts.push({
+    id: 'm-cat-food',
+    name: 'Adult Somonlu Yetişkin Kedi Maması 1,5 K',
+    benimposBarcode: '7613036508193',
+    buyingPrice: 850,
+    stock: 10
+  });
+  db.productMatching.channelProducts.push({
+    id: 'cp-1',
+    channelId: 'uber-eats',
+    channelProductId: 'p1',
+    channelBarcode: '7613036508193',
+    channelName: 'Adult Somonlu Yetişkin Kedi Maması 1,5 K'
+  });
+  db.productMatching.mappings.push({
+    id: 'map-1',
+    channelId: 'uber-eats',
+    channelProductId: 'p1',
+    channelBarcode: '7613036508193',
+    masterProductId: 'm-cat-food',
+    status: MAPPING_STATUS.MANUAL_CONFIRMED
+  });
+  return db;
+}
 
 test('resolveReportPeriod today mode uses zero days label', () => {
   const period = resolveReportPeriod({ period: 'today' });
@@ -32,8 +61,6 @@ test('buildProfitFootnote lists missing cost and reliable-order note', () => {
 });
 
 test('buildOpsReportsProfit uses hybrid matching for BenimPOS master costs', async () => {
-  configureDbStore({ dbReadBackend: 'sqlite' });
-
   const branchId = 'branch-1';
   const since = new Date('2026-01-01T00:00:00Z');
   const pool = {
@@ -71,14 +98,16 @@ test('buildOpsReportsProfit uses hybrid matching for BenimPOS master costs', asy
     since,
     liveOnly: false,
     channel: 'uber-eats',
-    matchingConfig: { productMatchingMode: 'legacy', productMatchingModeByChannel: {} }
+    matchingConfig: { productMatchingMode: 'legacy', productMatchingModeByChannel: {} },
+    db: profitMatchingDb()
   });
   const hybridProfit = await buildOpsReportsProfit(pool, {
     branchId,
     since,
     liveOnly: false,
     channel: 'uber-eats',
-    matchingConfig: { productMatchingMode: 'hybrid', productMatchingModeByChannel: {} }
+    matchingConfig: { productMatchingMode: 'hybrid', productMatchingModeByChannel: {} },
+    db: profitMatchingDb()
   });
 
   assert.equal(legacyProfit.totalProfit, 0);
