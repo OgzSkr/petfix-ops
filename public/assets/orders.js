@@ -158,9 +158,19 @@ let lastHzlMrktOpsChannels = null;
 let lastUpdatedAt = null;
 let lastFromCache = false;
 let lastCacheMeta = { skipped: false, cooldownSeconds: 0, message: '' };
+let lastGetirSync = null;
 let ordersPageSize = 10;
 let ordersPage = 1;
 let activeLifecycleTab = 'active';
+let lifecycleTabUserSelected = false;
+let opsActiveRefreshTimer = null;
+
+const ACTIVE_ORDER_SOUND_STORAGE_KEY = 'hzlmrktops.activeOrderSound';
+let knownActiveOrderKeys = new Set();
+let activeOrderSoundReady = false;
+let activeOrderSoundScope = '';
+let orderSoundAudioCtx = null;
+let activeOrderSoundEnabled = readActiveOrderSoundEnabled();
 
 const COL_COUNT = isOpsOrders ? 11 : (isMultiChannel ? 11 : 10);
 
@@ -194,6 +204,7 @@ function normalizeOrderStatusKey(status) {
 }
 const qualityBannerEl = document.getElementById('ordersQualityBanner');
 const cacheBannerEl = document.getElementById('ordersCacheBanner');
+const syncBannerEl = document.getElementById('ordersSyncBanner');
 const matchingBannerEl = document.getElementById('ordersMatchingBanner');
 const matchingStripEl = document.getElementById('ordersMatchingStrip');
 const quickFilterRoot = document.getElementById('ordersQuickFilters');
@@ -209,7 +220,159 @@ if (bootstrap.authRequired && !getStoredToken()) {
   if (isEmbeddedChannel) window.BuyBoxChannelPage?.setOrdersLoading(true);
   syncChannelFilterTabs();
   hydrateChannelFilterLogos();
+  if (isOpsOrders) {
+    initActiveOrderSoundToggle();
+    restartOpsActiveAutoRefresh();
+    bindOrderSoundUnlock();
+    window.onPanelRefresh = () => loadOrders(true, { silent: true });
+  }
   loadOrders();
+}
+
+function readActiveOrderSoundEnabled() {
+  try {
+    const raw = localStorage.getItem(ACTIVE_ORDER_SOUND_STORAGE_KEY);
+    if (raw === '0' || raw === 'false') return false;
+    return true;
+  } catch {
+    return true;
+  }
+}
+
+function persistActiveOrderSoundEnabled(enabled) {
+  try {
+    localStorage.setItem(ACTIVE_ORDER_SOUND_STORAGE_KEY, enabled ? '1' : '0');
+  } catch {
+    /* ignore */
+  }
+}
+
+function initActiveOrderSoundToggle() {
+  const btn = document.getElementById('ordersSoundToggle');
+  if (!btn) return;
+  syncActiveOrderSoundToggle();
+  btn.addEventListener('click', () => {
+    activeOrderSoundEnabled = !activeOrderSoundEnabled;
+    persistActiveOrderSoundEnabled(activeOrderSoundEnabled);
+    syncActiveOrderSoundToggle();
+    ensureOrderSoundAudioContext();
+    if (activeOrderSoundEnabled) playNewActiveOrderSound(true);
+  });
+}
+
+function syncActiveOrderSoundToggle() {
+  const btn = document.getElementById('ordersSoundToggle');
+  if (!btn) return;
+  btn.classList.toggle('is-on', activeOrderSoundEnabled);
+  btn.classList.toggle('is-off', !activeOrderSoundEnabled);
+  btn.setAttribute('aria-pressed', activeOrderSoundEnabled ? 'true' : 'false');
+  btn.textContent = activeOrderSoundEnabled ? 'Ses: Açık' : 'Ses: Kapalı';
+  btn.title = activeOrderSoundEnabled
+    ? 'Yeni aktif sipariş geldiğinde ses çal'
+    : 'Ses bildirimi kapalı — açmak için tıklayın';
+}
+
+function bindOrderSoundUnlock() {
+  const unlock = () => ensureOrderSoundAudioContext();
+  document.addEventListener('click', unlock, { once: true, capture: true });
+  document.addEventListener('keydown', unlock, { once: true, capture: true });
+}
+
+function activeOrderSoundScopeKey() {
+  return `${activeChannelFilter}:${daysSelect?.value || DEFAULT_ORDERS_DAYS}`;
+}
+
+function orderRowIdentity(row) {
+  const channel = String(row.channel || row.channelId || '').trim();
+  const orderNo = String(row.orderNumber || row.shipmentPackageId || '').trim();
+  if (channel && orderNo) return `${channel}::${orderNo}`;
+  return orderNo;
+}
+
+function activeOrderKeysFromRows(rows) {
+  const keys = new Set();
+  for (const row of rows) {
+    if (!rowMatchesDateRange(row)) continue;
+    if (isOrderCompleted(row)) continue;
+    const id = orderRowIdentity(row);
+    if (id) keys.add(id);
+  }
+  return keys;
+}
+
+function ensureOrderSoundAudioContext() {
+  if (!orderSoundAudioCtx) {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (Ctx) orderSoundAudioCtx = new Ctx();
+  }
+  if (orderSoundAudioCtx?.state === 'suspended') {
+    orderSoundAudioCtx.resume().catch(() => {});
+  }
+  return orderSoundAudioCtx;
+}
+
+function playNewActiveOrderSound(preview = false) {
+  if (!preview && !activeOrderSoundEnabled) return;
+  try {
+    if (navigator.vibrate) navigator.vibrate([70, 35, 90]);
+  } catch {
+    /* ignore */
+  }
+  const ctx = ensureOrderSoundAudioContext();
+  if (!ctx) return;
+  const now = ctx.currentTime;
+  const tones = [
+    { freq: 880, start: 0, duration: 0.11 },
+    { freq: 1175, start: 0.17, duration: 0.13 }
+  ];
+  for (const tone of tones) {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = tone.freq;
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    const t0 = now + tone.start;
+    gain.gain.setValueAtTime(0.0001, t0);
+    gain.gain.exponentialRampToValueAtTime(0.14, t0 + 0.015);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + tone.duration);
+    osc.start(t0);
+    osc.stop(t0 + tone.duration + 0.02);
+  }
+}
+
+function detectNewActiveOrdersAndNotify() {
+  if (!isOpsOrders) return;
+
+  const scope = activeOrderSoundScopeKey();
+  const currentKeys = activeOrderKeysFromRows(allRows);
+
+  if (scope !== activeOrderSoundScope) {
+    activeOrderSoundScope = scope;
+    knownActiveOrderKeys = currentKeys;
+    activeOrderSoundReady = true;
+    return;
+  }
+
+  if (!activeOrderSoundReady) {
+    knownActiveOrderKeys = currentKeys;
+    activeOrderSoundReady = true;
+    return;
+  }
+
+  const newcomers = [];
+  for (const key of currentKeys) {
+    if (!knownActiveOrderKeys.has(key)) newcomers.push(key);
+  }
+  knownActiveOrderKeys = currentKeys;
+
+  if (!newcomers.length || !activeOrderSoundEnabled) return;
+
+  playNewActiveOrderSound();
+  const msg = newcomers.length === 1
+    ? 'Yeni aktif sipariş geldi'
+    : `${newcomers.length} yeni aktif sipariş geldi`;
+  showToast(msg);
 }
 
 function applyInitialQueryParams() {
@@ -233,6 +396,7 @@ function applyInitialQueryParams() {
       daysSelect.value = DEFAULT_ORDERS_DAYS;
     }
     toggleCustomDates();
+    updateOrdersHeroPeriodLabel();
   }
   const matching = params.get('matching');
   if (matching && matchingFilter && ['all', 'unmapped', 'needs_review'].includes(matching)) {
@@ -269,6 +433,7 @@ function bindEvents() {
   if (zoomReset) zoomReset.addEventListener('click', () => setZoom(0.9));
   daysSelect.addEventListener('change', () => {
     toggleCustomDates();
+    updateOrdersHeroPeriodLabel();
     if (daysSelect.value !== 'custom') loadOrders();
   });
   statusFilter.addEventListener('change', refreshView);
@@ -298,6 +463,7 @@ function bindEvents() {
 
   document.getElementById('ordersLifecycleTabs')?.querySelectorAll('.orders-lifecycle-tab').forEach((btn) => {
     btn.addEventListener('click', () => {
+      lifecycleTabUserSelected = true;
       setActiveLifecycleTab(btn.dataset.lifecycle || 'active');
       ordersPage = 1;
       refreshView();
@@ -320,6 +486,9 @@ function bindEvents() {
   document.getElementById('orderModalClose').addEventListener('click', closeModal);
   modalBackdrop.addEventListener('click', (e) => {
     if (e.target === modalBackdrop) closeModal();
+  });
+  window.addEventListener('buybox:benimpos-sale-success', (event) => {
+    handleBenimposSaleSuccess(event.detail || {});
   });
 
   if (chartWrap) {
@@ -632,7 +801,7 @@ function formatOpsDeliveryDate(row) {
 }
 
 function opsSettlementChannelLabel(channelId) {
-  if (channelId === 'uber-eats') return 'Trendyol Go';
+  if (channelId === 'uber-eats') return 'Uber Eats';
   if (channelId === 'yemeksepeti') return 'Yemeksepeti';
   if (channelId === 'getir') return 'Getir';
   return 'Kanal';
@@ -706,13 +875,20 @@ function renderYemeksepetiEmptyHint(data) {
     '<a href="https://partner-app.yemeksepeti.com/" target="_blank" rel="noopener">Partner Portal</a> → Shop Integrations loglarını kontrol edin.';
 }
 
-async function loadOrders(forceRefresh = false) {
+async function loadOrders(forceRefresh = false, options = {}) {
+  const silent = Boolean(options.silent);
   const refreshBtn = document.getElementById('refreshOrders');
   refreshBtn.disabled = true;
   footerEl.textContent = forceRefresh
     ? `${channelLabel} API'den siparişler çekiliyor…`
     : 'Siparişler yükleniyor…';
-  tableBody.innerHTML = '<tr><td colspan="' + COL_COUNT + '" class="orders-loading">Siparişler çekiliyor, lütfen bekleyin…</td></tr>';
+  if (!silent) {
+    window.PfStatus?.loading?.(
+      forceRefresh ? 'Siparişler güncelleniyor' : 'Siparişler yükleniyor',
+      forceRefresh ? 'Kanallardan yeni siparişler kontrol ediliyor' : 'Liste hazırlanıyor'
+    );
+  }
+  tableBody.innerHTML = '<tr><td colspan="' + COL_COUNT + '" class="orders-loading"><span class="orders-loading-spinner" aria-hidden="true"></span> Siparişler çekiliyor, lütfen bekleyin…</td></tr>';
   if (lossProductsBody) {
     lossProductsBody.innerHTML = '<tr><td colspan="10" class="orders-loading">Siparişler çekiliyor, lütfen bekleyin…</td></tr>';
   }
@@ -730,6 +906,7 @@ async function loadOrders(forceRefresh = false) {
     lastDataQuality = data.dataQuality || null;
     lastOrderSources = data.orderSources || null;
     lastMatchingSummary = data.matchingSummary || null;
+    lastGetirSync = data.getirSync || null;
     activeRange = {
       startMs: data.range?.startMs || 0,
       endMs: data.range?.endMs || 0
@@ -749,6 +926,9 @@ async function loadOrders(forceRefresh = false) {
       matchingSummary: data.matchingSummary,
       orderSources: data.orderSources
     });
+    if (isOpsOrders && !data.skipped) {
+      detectNewActiveOrdersAndNotify();
+    }
     if (isEmbeddedChannel) {
       window.BuyBoxChannelPage?.updateOrdersStatus({
         configured: true,
@@ -763,20 +943,35 @@ async function loadOrders(forceRefresh = false) {
     }
     renderYemeksepetiEmptyHint(data);
     renderMultiChannelSourceNote(data);
+    if (!silent) {
+      if (data.skipped) {
+        window.PfStatus?.error?.(
+          'Güncelleme bekleniyor',
+          `${data.message || 'Kısa süre önce güncellendi'} (${data.cooldownSeconds || 0} sn)`
+        );
+      } else {
+        const dq = data.dataQuality;
+        let detail = `${allRows.length.toLocaleString('tr-TR')} kayıt listelendi`;
+        if (dq && dq.withWarnings > 0) {
+          detail += ` · ${dq.withWarnings} siparişte uyarı var`;
+        }
+        window.PfStatus?.success?.(
+          forceRefresh ? 'Siparişler güncellendi' : 'Siparişler hazır',
+          detail
+        );
+      }
+    }
     if (data.skipped) {
-      showToast(data.message + ' (' + data.cooldownSeconds + ' sn)');
+      if (!silent) showToast(data.message + ' (' + data.cooldownSeconds + ' sn)');
       return;
     }
+    if (silent) return;
     const dq = data.dataQuality;
     const dhl = data.dhlShipping;
-    let toast = 'Siparişler güncellendi.';
-    if (dhl && dhl.queried > 0) {
-      toast += ' DHL: ' + dhl.resolved + ' net, ' + dhl.pending + ' bekliyor.';
-    }
     if (dq && dq.withWarnings > 0) {
       showToast('Güncellendi — ' + dq.withWarnings + ' siparişte veri uyarısı var.' + (dhl?.queried ? ' DHL: ' + dhl.resolved + ' net.' : ''));
-    } else {
-      showToast(toast);
+    } else if (dhl && dhl.queried > 0) {
+      showToast('Siparişler güncellendi. DHL: ' + dhl.resolved + ' net, ' + dhl.pending + ' bekliyor.');
     }
   } catch (error) {
     tableBody.innerHTML = '<tr><td colspan="' + COL_COUNT + '" class="orders-error">' + esc(error.message) + '</td></tr>';
@@ -789,6 +984,9 @@ async function loadOrders(forceRefresh = false) {
         configured: !String(error.message || '').includes('API bilgileri eksik'),
         error: error.message || 'Yüklenemedi'
       });
+    }
+    if (!silent) {
+      window.PfStatus?.error?.('Siparişler yüklenemedi', error.message);
     }
     showToast(error.message);
   } finally {
@@ -855,6 +1053,8 @@ function translateSource(source) {
     partner_api: 'Partner API',
     portal_api: 'Portal geçmişi',
     webhook: 'Canlı (webhook)',
+    poll: 'Otomatik poll',
+    backfill: 'Geçmiş doldurma',
     manual: 'Manuel',
     fixture: 'Test verisi'
   };
@@ -885,6 +1085,7 @@ function refreshView(meta) {
     renderQualityBanner(dq);
   }
   renderCacheBanner();
+  renderSyncBanner();
   if (activeOrdersView === 'loss-products') {
     renderLossProducts();
   } else {
@@ -908,10 +1109,12 @@ function refreshView(meta) {
   if (isMultiChannel && !isOpsOrders) renderMultiChannelSourceNote({ channels: lastHzlMrktOpsChannels || [] });
   if (isOpsOrders) {
     updateLifecycleTabCounts();
-    const activeCount = countLifecycleRows('active');
-    const completedCount = countLifecycleRows('completed');
-    if (activeLifecycleTab === 'active' && activeCount === 0 && completedCount > 0) {
-      setActiveLifecycleTab('completed');
+    if (!lifecycleTabUserSelected) {
+      const activeCount = countLifecycleRows('active');
+      const completedCount = countLifecycleRows('completed');
+      if (activeLifecycleTab === 'active' && activeCount === 0 && completedCount > 0) {
+        setActiveLifecycleTab('completed');
+      }
     }
   }
   tryOpenPendingOrder();
@@ -953,6 +1156,31 @@ function countLifecycleRows(lifecycle) {
   return rows.filter((row) => lifecycle === 'completed' ? isOrderCompleted(row) : !isOrderCompleted(row)).length;
 }
 
+function updateOrdersListHeading() {
+  if (!isOpsOrders) return;
+  const listTitle = document.getElementById('ordersListTitle');
+  if (listTitle) {
+    listTitle.textContent = activeLifecycleTab === 'completed'
+      ? 'Tamamlanmış siparişler'
+      : 'Aktif siparişler';
+  }
+}
+
+function updateOrdersHeroPeriodLabel() {
+  const heroPeriod = document.getElementById('ordersHeroPeriod');
+  if (!heroPeriod || !daysSelect) return;
+  const value = daysSelect.value;
+  const labels = {
+    '1': 'Bugün',
+    '7': '7 gün',
+    '14': '14 gün',
+    '30': '30 gün',
+    '60': '60 gün',
+    custom: 'Özel aralık'
+  };
+  heroPeriod.textContent = labels[value] || 'Dönem';
+}
+
 function updateLifecycleTabCounts() {
   if (!isOpsOrders) return;
   const activeCount = countLifecycleRows('active');
@@ -961,6 +1189,11 @@ function updateLifecycleTabCounts() {
   const completedEl = document.getElementById('lifecycleCountCompleted');
   if (activeEl) activeEl.textContent = activeCount ? '(' + activeCount + ')' : '';
   if (completedEl) completedEl.textContent = completedCount ? '(' + completedCount + ')' : '';
+  const heroActive = document.getElementById('ordersHeroActive');
+  const heroCompleted = document.getElementById('ordersHeroCompleted');
+  if (heroActive) heroActive.textContent = String(activeCount);
+  if (heroCompleted) heroCompleted.textContent = String(completedCount);
+  updateOrdersListHeading();
 }
 
 function setActiveLifecycleTab(lifecycle) {
@@ -970,10 +1203,24 @@ function setActiveLifecycleTab(lifecycle) {
     el.classList.toggle('active', selected);
     el.setAttribute('aria-selected', selected ? 'true' : 'false');
   });
+  updateOrdersListHeading();
+  restartOpsActiveAutoRefresh();
+}
+
+function restartOpsActiveAutoRefresh() {
+  if (opsActiveRefreshTimer) {
+    clearInterval(opsActiveRefreshTimer);
+    opsActiveRefreshTimer = null;
+  }
+  if (!isOpsOrders || activeLifecycleTab !== 'active') return;
+  opsActiveRefreshTimer = setInterval(() => {
+    if (activeLifecycleTab !== 'active' || activeOrdersView !== 'orders') return;
+    loadOrders(false, { silent: true }).catch(() => {});
+  }, 90000);
 }
 
 function pickLifecycleTabAfterLoad() {
-  if (!isOpsOrders || !allRows.length) return;
+  if (!isOpsOrders || !allRows.length || lifecycleTabUserSelected) return;
   const activeCount = countLifecycleRows('active');
   const completedCount = countLifecycleRows('completed');
   if (activeCount === 0 && completedCount > 0) {
@@ -1435,6 +1682,41 @@ function renderCacheBanner() {
   }
 }
 
+function renderSyncBanner() {
+  if (!syncBannerEl) return;
+
+  const sync = lastGetirSync;
+  const showForChannel = !isMultiChannel || activeChannelFilter === 'all' || activeChannelFilter === 'getir';
+  if (!sync || !showForChannel) {
+    syncBannerEl.hidden = true;
+    syncBannerEl.innerHTML = '';
+    return;
+  }
+
+  const lines = [];
+  if (Array.isArray(sync.messages) && sync.messages.length) {
+    lines.push(...sync.messages);
+  } else if (Number(sync.ingested) > 0) {
+    lines.push(`${sync.ingested} yeni Getir siparişi senkronize edildi.`);
+  } else if (Number(sync.duplicates) > 0 && Number(sync.fetched) > 0) {
+    lines.push(`${sync.duplicates} Getir siparişi güncellendi.`);
+  }
+
+  if (!lines.length) {
+    syncBannerEl.hidden = true;
+    syncBannerEl.innerHTML = '';
+    return;
+  }
+
+  const isWarn = Boolean(sync.messages?.length) || Number(sync.failed) > 0 || sync.apiReady === false;
+  syncBannerEl.hidden = false;
+  syncBannerEl.className = 'orders-sync-banner' + (isWarn ? ' orders-sync-banner--warn' : ' orders-sync-banner--ok');
+  syncBannerEl.innerHTML =
+    '<strong>Getir senkron</strong>' +
+    '<span>' + esc(lines.join(' · ')) + '</span>' +
+    (isWarn ? ' <a href="/hzlmrktops/integrations?channel=getir">Entegrasyonlar</a>' : '');
+}
+
 function renderQualityBanner(dataQuality) {
   if (!qualityBannerEl) return;
 
@@ -1456,11 +1738,11 @@ function renderQualityBanner(dataQuality) {
     '<strong>' + count + ' siparişte veri uyarısı</strong>' +
     '<span>Kâr hesabı eksik maliyet veya komisyon nedeniyle güvenilir olmayabilir.</span>' +
     (topIssues ? '<span class="orders-quality-detail">' + topIssues + '</span>' : '') +
-    '<a href="' + esc(isChannelPage ? '/hzlmrktops/urunler' : '/marketplace/products?emptyCostOnly=1') + '">Eksik maliyetleri düzelt</a>';
+    '<a href="' + esc(isChannelPage ? '/hzlmrktops/urunler' : '/hzlmrktops/urunler?emptyCostOnly=1') + '">Eksik maliyetleri düzelt</a>';
 }
 
 function matchingPoolUrl() {
-  const channelId = bootstrap.channelId || 'trendyol-marketplace';
+  const channelId = bootstrap.channelId || 'uber-eats';
   return (bootstrap.matchingPath || '/hzlmrktops/urunler') + '?tab=' + encodeURIComponent(channelId);
 }
 
@@ -1723,8 +2005,11 @@ function renderTable() {
 function renderOpsRow(row, index) {
   const elapsed = formatElapsedMinutes(row.orderDateMs);
   const dateCell = formatOpsDate(row.orderDateMs) + (elapsed ? ' ' + elapsed : '');
+  const sourceBadge = row.ingestSource
+    ? '<span class="orders-source-pill" title="Sipariş kaynağı">' + esc(translateSource(row.ingestSource)) + '</span> '
+    : '';
   return '<tr class="orders-ops-row">' +
-    '<td><a href="#" class="orders-id-link" data-detail="' + index + '">' + esc(row.orderNumber) + '</a></td>' +
+    '<td>' + sourceBadge + '<a href="#" class="orders-id-link" data-detail="' + index + '">' + esc(row.orderNumber) + '</a></td>' +
     '<td class="orders-channel-logo-cell">' + renderChannelCell(row) + '</td>' +
     '<td>' + esc(row.customerName || '—') + '</td>' +
     '<td>' + esc(row.paymentMethod || 'Online') + '</td>' +
@@ -1853,15 +2138,25 @@ function openDetail(index) {
     renderMatchingActions(row) +
     renderLineItems(row.lines) +
     (bootstrap.benimposSaleEnabled
-      ? '<div class="detail-actions"><button type="button" class="btn-green" id="benimposPreviewBtn">BenimPOS\'a Gönder</button>' +
-        '<span class="muted detail-actions-note">Önce eşleştirme ön izlemesi — yalnızca manuel onaylı eşleştirmeler satışa gider.</span></div>'
+      ? '<div class="detail-actions">' +
+        (row.benimposTransferStatus === 'blocked'
+          ? '<p class="orders-warn-box">' + esc(row.benimposTransferNote || 'Eşleştirme eksik — BenimPOS gönderimi engelli.') + '</p>'
+          : '') +
+        '<button type="button" class="btn-green" id="benimposPreviewBtn">' +
+        (row.benimposTransferStatus === 'blocked' ? 'Eşleştir ve BenimPOS\'a gönder' : 'BenimPOS\'a Gönder') +
+        '</button>' +
+        '<span class="muted detail-actions-note">Önce eşleştirme ön izlemesi — onaylı eşleştirmeler satışa gider.</span></div>'
       : '');
 
   modalBackdrop.classList.add('open');
 
   if (bootstrap.benimposSaleEnabled) {
     document.getElementById('benimposPreviewBtn')?.addEventListener('click', () => {
-      window.BuyBoxBenimposSale?.openPreview(row, activeDays);
+      const blocked = row.benimposTransferStatus === 'blocked';
+      window.BuyBoxBenimposSale?.openPreview(row, activeDays, {
+        focusLineBarcode: blocked ? findFirstBlockedLineBarcode(row) : '',
+        openFirstBlockedInline: blocked
+      });
     });
   }
 }
@@ -1922,28 +2217,59 @@ function openOpsDetail(index) {
     '</div>';
 
   modalBackdrop.classList.add('open');
+  bindOpsOrderDetailActions(row);
+}
 
-  const benimposBtn = document.getElementById('benimposPreviewBtn');
-  if (benimposBtn) {
-    benimposBtn.addEventListener('click', () => {
-      window.BuyBoxBenimposSale?.openPreview(row, activeDays);
+function lineNeedsBenimposMatch(line) {
+  if (!matchingEnabled()) return false;
+  const status = line.mappingStatus || 'legacy';
+  return status !== 'manual_confirmed' && status !== 'legacy';
+}
+
+function findFirstBlockedLineBarcode(row) {
+  const line = (row.lines || []).find((item) => lineNeedsBenimposMatch(item));
+  return line ? String(line.barcode || '').trim() : '';
+}
+
+function bindOpsOrderDetailActions(row) {
+  document.getElementById('benimposPreviewBtn')?.addEventListener('click', () => {
+    const blocked = row.benimposTransferStatus === 'blocked';
+    window.BuyBoxBenimposSale?.openPreview(row, activeDays, {
+      focusLineBarcode: blocked ? findFirstBlockedLineBarcode(row) : '',
+      openFirstBlockedInline: blocked
     });
-  }
+  });
+
+  modalBody.querySelectorAll('.ops-line-match-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const barcode = btn.getAttribute('data-line-barcode') || '';
+      window.BuyBoxBenimposSale?.openPreview(row, activeDays, { focusLineBarcode: barcode });
+    });
+  });
 }
 
 function renderOpsBenimposActions(row) {
   if (!bootstrap.benimposSaleEnabled) return '';
   const channelId = row.channel || row.channelId || '';
-  if (!['uber-eats', 'yemeksepeti'].includes(channelId)) return '';
+  if (!['uber-eats', 'yemeksepeti', 'getir'].includes(channelId)) return '';
 
   const status = row.benimposTransferStatus;
+  const note = row.benimposTransferNote || 'BenimPOS gönderimi için eşleştirme gerekli.';
   if (status === 'transferred') {
     return '<div class="ops-detail-actions ops-detail-actions--benimpos">' +
-      '<p class="muted">BenimPOS satışı oluşturulmuş.</p></div>';
+      '<p class="muted">' + esc(note) + '</p>' +
+      '<button type="button" class="btn-green" id="benimposPreviewBtn">Ön izlemeyi tekrar aç</button>' +
+      '<p class="muted ops-detail-actions-note">Yeniden göndermeden önce BenimPOS\'ta mevcut satışı iptal edin.</p></div>';
+  }
+  if (status === 'blocked') {
+    return '<div class="ops-detail-actions ops-detail-actions--benimpos">' +
+      '<p class="orders-warn-box">' + esc(note) + '</p>' +
+      '<button type="button" class="btn-green" id="benimposPreviewBtn">Eşleştir ve BenimPOS\'a gönder</button>' +
+      '<p class="muted ops-detail-actions-note">Engelli satırları ön izlemede eşleştirip ardından gönderebilirsiniz.</p></div>';
   }
   if (status !== 'ready') {
     return '<div class="ops-detail-actions ops-detail-actions--benimpos">' +
-      '<p class="orders-warn-box">' + esc(row.benimposTransferNote || 'BenimPOS gönderimi için eşleştirme gerekli.') + '</p></div>';
+      '<p class="orders-warn-box">' + esc(note) + '</p></div>';
   }
 
   return '<div class="ops-detail-actions ops-detail-actions--benimpos">' +
@@ -1973,33 +2299,71 @@ function renderOpsBenimposTransferDetail(row) {
     '</strong></div>';
 }
 
+function opsOrderTotalsFromPortal(portal) {
+  const bagFee = Number(portal.bagFee) || 0;
+  const orderAmount = Number(portal.orderAmount) || 0;
+  return {
+    basket: orderAmount > 0 && bagFee > 0 ? orderAmount : (Number(portal.price) || 0),
+    discount: Number(portal.discount) || 0,
+    campaignAmount: Number(portal.campaignAmount) || 0,
+    bagFee,
+    commission: Number(portal.orderCommission) > 0
+      ? Number(portal.orderCommission)
+      : (Number(portal.commission) || 0),
+    orderCommission: Number(portal.orderCommission) || 0,
+    commissionRate: portal.commissionRate ?? null,
+    courierFee: Number(portal.courierFee ?? portal.deliveryFee) || 0,
+    courierFeeRate: portal.courierFeeRate ?? null,
+    fixedDistribution: Number(portal.fixedDistribution) || 0,
+    totalDeductions: Number(portal.totalDeductions) || 0,
+    withholdingRate: portal.withholdingRate ?? null,
+    withholdingAmount: Number(portal.withholdingAmount) || 0,
+    partialRefund: Number(portal.partialRefund) || 0,
+    deliveryFee: Number(portal.deliveryFee) || 0,
+    provision: Number(portal.provision) || 0,
+    total: Math.max(0, Number(portal.price) - Number(portal.discount)),
+    netHakedis: Number(portal.netEarning) || 0,
+    settlementLoaded: true,
+    ruleBased: portal.source === 'rules'
+  };
+}
+
 function opsOrderTotals(row, lines) {
   const portal = row.portalFinancials;
   if (portal?.loaded) {
-    return {
-      basket: Number(portal.price) || 0,
-      discount: Number(portal.discount) || 0,
-      campaignAmount: Number(portal.campaignAmount) || 0,
-      bagFee: Number(portal.bagFee) || 0,
-      commission: Number(portal.commission) || 0,
-      orderCommission: Number(portal.orderCommission) || 0,
-      commissionRate: portal.commissionRate ?? null,
-      courierFee: Number(portal.courierFee ?? portal.deliveryFee) || 0,
-      fixedDistribution: Number(portal.fixedDistribution) || 0,
-      totalDeductions: Number(portal.totalDeductions) || 0,
-      withholdingRate: portal.withholdingRate ?? null,
-      withholdingAmount: Number(portal.withholdingAmount) || 0,
-      partialRefund: Number(portal.partialRefund) || 0,
-      deliveryFee: Number(portal.deliveryFee) || 0,
-      provision: Number(portal.provision) || 0,
-      total: Math.max(0, Number(portal.price) - Number(portal.discount)),
-      netHakedis: Number(portal.netEarning) || 0,
-      settlementLoaded: true
-    };
+    return opsOrderTotalsFromPortal(portal);
+  }
+
+  const getir = row.getirFinancials;
+  if (getir?.grossAmount > 0) {
+    return opsOrderTotalsFromPortal({
+      loaded: true,
+      price: getir.grossAmount,
+      orderAmount: getir.orderAmount,
+      discount: getir.sellerDiscount,
+      campaignAmount: getir.campaignAmount,
+      bagFee: getir.bagFee,
+      commission: getir.orderCommission,
+      orderCommission: getir.orderCommission,
+      commissionRate: getir.commissionRate,
+      courierFee: getir.courierFee,
+      courierFeeRate: getir.courierFeeRate,
+      fixedDistribution: getir.fixedDistribution,
+      totalDeductions: getir.totalDeductions,
+      withholdingRate: getir.withholdingRate,
+      withholdingAmount: getir.withholdingAmount,
+      partialRefund: 0,
+      deliveryFee: getir.courierFee,
+      provision: 0,
+      netEarning: getir.netAmount
+    });
   }
 
   const items = Array.isArray(lines) ? lines : [];
-  const lineSum = items.reduce((sum, line) => sum + (Number(line.lineSalesAmount) || 0), 0);
+  const lineSum = items.reduce((sum, line) => {
+    const pricing = resolveOpsLineDisplayPrices(line);
+    return sum + (Number(pricing.total) || 0);
+  }, 0);
   const basket = lineSum > 0
     ? lineSum
     : Number(row.packageGrossAmount || row.salesAmount) || 0;
@@ -2043,10 +2407,12 @@ function renderOpsOrderTotalsFooter(totals, channelId = '') {
   }
 
   const channelLabel = opsSettlementChannelLabel(channelId);
-  const settlementNote = channelId === 'uber-eats' || channelId === 'yemeksepeti' || channelId === 'getir'
-    ? '<p class="muted ops-detail-settlement-note">' + esc(channelLabel) +
-      ' gider özeti henüz yüklenmedi; komisyon ve net hakediş tahmini olabilir.</p>'
-    : '';
+  const settlementNote = channelId === 'getir'
+    ? ''
+    : (channelId === 'uber-eats' || channelId === 'yemeksepeti')
+      ? '<p class="muted ops-detail-settlement-note">' + esc(channelLabel) +
+        ' gider özeti henüz yüklenmedi; komisyon ve net hakediş tahmini olabilir.</p>'
+      : '';
 
   const discountRow = totals.discount > 0
     ? '<div class="ops-detail-total-row ops-detail-total-row--discount">' +
@@ -2085,12 +2451,15 @@ function renderOpsPortalFinancialsFooter(totals, channelId = '') {
   const commissionRate = totals.commissionRate != null
     ? '<span class="ops-portal-rate">%' + formatMoney(totals.commissionRate) + '</span>'
     : '';
+  const courierRate = totals.courierFeeRate != null
+    ? '<span class="ops-portal-rate">%' + formatMoney(totals.courierFeeRate) + '</span>'
+    : '';
   const rows = [
     ['Fiyat', formatMoney(totals.basket) + ' ₺', ''],
     totals.discount > 0 ? ['Kampanya / İndirim', '-' + formatMoney(totals.discount) + ' ₺', 'is-deduct'] : null,
     totals.bagFee > 0 ? ['Poşet', formatMoney(totals.bagFee) + ' ₺', ''] : null,
     totals.commission > 0 ? ['Komisyon', '-' + formatMoney(totals.commission) + ' ₺', 'is-deduct', commissionRate] : null,
-    totals.courierFee > 0 ? ['Kurye', '-' + formatMoney(totals.courierFee) + ' ₺', 'is-deduct'] : null,
+    totals.courierFee > 0 ? ['Kurye', '-' + formatMoney(totals.courierFee) + ' ₺', 'is-deduct', courierRate] : null,
     totals.fixedDistribution > 0 ? ['Sabit dağıtım', '-' + formatMoney(totals.fixedDistribution) + ' ₺', 'is-deduct'] : null,
     totals.partialRefund > 0 ? ['Kısmi İade', '-' + formatMoney(totals.partialRefund) + ' ₺', 'is-deduct'] : null,
     totals.deliveryFee > 0 && !totals.courierFee ? ['Teslimat Ücreti', '-' + formatMoney(totals.deliveryFee) + ' ₺', 'is-deduct'] : null,
@@ -2100,7 +2469,7 @@ function renderOpsPortalFinancialsFooter(totals, channelId = '') {
   ].filter(Boolean);
 
   const sourceNote = channelId === 'getir'
-    ? 'Kaynak: Getir Finansal Hareketler / delivered API (komisyon, kurye, stopaj).'
+    ? 'Kaynak: PetFix Getir kural hesabı (%13,2 komisyon, stopaj; Getir kurye +%14,4).'
     : 'Kaynak: ' + esc(channelLabel) + ' cari ekstre (fiyat, indirim, iade, provizyon).';
 
   return '<div class="ops-portal-financials">' +
@@ -2160,15 +2529,53 @@ function renderOpsQtyBadge(quantity) {
   return '<span class="ops-qty-badge' + multi + '">' + esc(qty) + '</span>';
 }
 
+function renderOpsLineMappingCell(line, channelId) {
+  const status = line.mappingStatus || 'legacy';
+  if (status === 'legacy') {
+    return '<td class="ops-line-match-cell"><span class="muted">—</span></td>';
+  }
+
+  const badgeHtml = renderLineMappingBadge(line, channelId);
+  let actionHtml = '';
+  if (bootstrap.benimposSaleEnabled && lineNeedsBenimposMatch(line)) {
+    const barcode = String(line.barcode || '').trim();
+    const label = status === 'auto_matched' ? 'Onayla' : 'Eşleştir';
+    actionHtml = barcode
+      ? '<button type="button" class="btn-mini ops-line-match-btn" data-line-barcode="' +
+        escAttr(barcode) + '">' + esc(label) + '</button>'
+      : '';
+  }
+
+  return '<td class="ops-line-match-cell">' + badgeHtml + actionHtml + '</td>';
+}
+
+function resolveOpsLineDisplayPrices(line) {
+  const qty = Number(line.quantity) || 1;
+  let unit = Number(line.unitSalesPrice ?? line.lineUnitPrice ?? line.unitPrice) || 0;
+  let total = Number(line.lineSalesAmount ?? line.lineGrossAmount) || 0;
+
+  if (unit > 0 && total > 0 && Math.abs(total - unit) < 0.02 && qty > 1) {
+    total = unit * qty;
+  } else if (unit > 0 && !total) {
+    total = unit * qty;
+  } else if (total > 0 && !unit) {
+    unit = total / qty;
+  } else if (unit > 0 && total > 0 && Math.abs(total - unit * qty) > 0.05) {
+    total = unit * qty;
+  }
+
+  return { unit, total, qty };
+}
+
 function renderOpsLineItems(lines, channelId) {
   if (!lines || !lines.length) {
     return '<p class="muted">Ürün satırı yok.</p>';
   }
 
+  const showMatching = matchingEnabled();
   const rows = lines.map((line) => {
     const barcode = String(line.barcode || line.masterBarcode || '').trim();
-    const unitPrice = Number(line.unitSalesPrice ?? line.lineUnitPrice ?? line.unitPrice)
-      || (Number(line.lineSalesAmount) / (Number(line.quantity) || 1));
+    const pricing = resolveOpsLineDisplayPrices(line);
     const brand = String(line.brandName || '—').trim() || '—';
     const imgCell = opsLineThumbHtml(line, channelId);
     return '<tr>' +
@@ -2181,9 +2588,10 @@ function renderOpsLineItems(lines, channelId) {
         '</div>' +
       '</td>' +
       '<td class="ops-brand-cell">' + esc(brand) + '</td>' +
-      '<td class="ops-money-cell">' + formatMoney(unitPrice) + ' ₺</td>' +
-      '<td class="ops-qty-cell">' + renderOpsQtyBadge(line.quantity) + '</td>' +
-      '<td class="ops-money-cell">' + formatMoney(line.lineSalesAmount) + ' ₺</td>' +
+      '<td class="ops-money-cell">' + formatMoney(pricing.unit) + ' ₺</td>' +
+      '<td class="ops-qty-cell">' + renderOpsQtyBadge(pricing.qty) + '</td>' +
+      '<td class="ops-money-cell">' + formatMoney(pricing.total) + ' ₺</td>' +
+      (showMatching ? renderOpsLineMappingCell(line, channelId) : '') +
     '</tr>';
   }).join('');
 
@@ -2191,6 +2599,7 @@ function renderOpsLineItems(lines, channelId) {
     '<table class="ops-products-table ops-products-table--hzlmrktops">' +
       '<thead><tr>' +
         '<th>Ürün</th><th>Marka</th><th>Birim Fiyat</th><th>Miktar</th><th>Toplam Fiyat</th>' +
+        (showMatching ? '<th>Eşleşme</th>' : '') +
       '</tr></thead>' +
       '<tbody>' + rows + '</tbody>' +
     '</table>' +
@@ -2315,8 +2724,8 @@ function renderMatchingActions(row) {
 
 function productsUrlForBarcode(barcode) {
   const code = String(barcode || '').trim();
-  if (!code) return bootstrap.productsPath || '/marketplace/products';
-  return (bootstrap.productsPath || '/marketplace/products') + '?barcode=' + encodeURIComponent(code);
+  if (!code) return bootstrap.productsPath || '/hzlmrktops/urunler';
+  return (bootstrap.productsPath || '/hzlmrktops/urunler') + '?barcode=' + encodeURIComponent(code);
 }
 
 function renderBarcodeLink(barcode) {
@@ -2359,7 +2768,7 @@ function renderLineItems(lines) {
       ? '<td class="orders-line-img-td"><img class="orders-line-img" src="/api/product-thumb-img?barcode=' + encodeURIComponent(barcode) + '" width="48" height="48" loading="lazy" alt="" onerror="this.style.display=\'none\'"></td>'
       : '<td class="orders-line-img-td"></td>';
     const mappingCell = showMapping
-      ? '<td>' + renderLineMappingBadge(line) + '</td>'
+      ? '<td>' + renderLineMappingBadge(line, bootstrap.channelId) + '</td>'
       : '';
     const costMetaCell = showCostMeta
       ? '<td class="orders-cost-cell">' + renderLineCostMeta(line) + '</td>'
@@ -2387,7 +2796,7 @@ function renderLineItems(lines) {
     '<tbody>' + rows + '</tbody></table></div>';
 }
 
-function renderLineMappingBadge(line) {
+function renderLineMappingBadge(line, orderChannelId) {
   const status = line.mappingStatus || 'legacy';
   const labels = {
     auto_matched: 'Otomatik',
@@ -2400,7 +2809,6 @@ function renderLineMappingBadge(line) {
     unmapped: 'Eşleşmedi',
     legacy: 'Legacy'
   };
-  const warnStatuses = ['missing_master', 'barcode_conflict', 'review_required', 'pending', 'unmapped', 'auto_matched'];
   const cls = ['missing_master', 'barcode_conflict', 'review_required', 'pending', 'unmapped'].includes(status)
     ? 'orders-map-badge orders-map-badge--warn'
     : (status === 'auto_matched' || status === 'manual_confirmed' ? 'orders-map-badge orders-map-badge--ok' : 'orders-map-badge');
@@ -2408,8 +2816,8 @@ function renderLineMappingBadge(line) {
   if (line.masterBarcode && line.masterBarcode !== line.barcode) {
     html += '<div class="orders-map-meta">→ ' + esc(line.masterBarcode) + '</div>';
   }
-  const poolUrl = buildPoolMatchUrl(line);
-  if (poolUrl) {
+  const poolUrl = buildPoolMatchUrl(line, orderChannelId);
+  if (poolUrl && !bootstrap.benimposSaleEnabled) {
     html += '<div class="orders-map-actions">' +
       '<a href="' + esc(poolUrl) + '" class="orders-map-link">Eşleştirmeyi düzenle</a>' +
       '</div>';
@@ -2424,6 +2832,28 @@ function detailItem(label, value) {
 function closeModal() {
   modalBackdrop.classList.remove('open');
   syncOrderQueryParam('');
+}
+
+function handleBenimposSaleSuccess(detail) {
+  closeModal();
+  window.BuyBoxBenimposSale?.close?.();
+
+  const orderNumber = String(detail.orderNumber || '').trim();
+  const salesCode = String(detail.salesCode || '').trim();
+  if (orderNumber && salesCode) {
+    const row = allRows.find((item) => String(item.orderNumber) === orderNumber);
+    if (row) {
+      row.benimposSalesCode = salesCode;
+      row.benimposTransferStatus = 'transferred';
+      row.benimposTransferNote = `BenimPOS satışı: ${salesCode}`;
+      refreshView();
+    }
+  }
+
+  const toastMessage = salesCode
+    ? `BenimPOS satış oluşturuldu: ${salesCode}`
+    : (detail.message || 'BenimPOS satışı oluşturuldu');
+  showToast(toastMessage);
 }
 
 async function exportReport() {
@@ -2551,7 +2981,7 @@ async function loadEmailSettings() {
       smtpParts.push('SMTP hazır');
       if (data.smtpFrom) smtpParts.push('Gönderen: ' + data.smtpFrom);
     } else {
-      smtpParts.push('SMTP eksik — buybox-platform/.env dosyasına Gmail uygulama şifresi ekleyin');
+      smtpParts.push('SMTP eksik — .env dosyasına Gmail uygulama şifresi ekleyin');
     }
     smtpNoteEl.textContent = smtpParts.join(' · ');
 

@@ -1,11 +1,11 @@
 :root {
   color-scheme: light;
 
-  --ops-brand-primary: #5c4033;
-  --ops-brand-accent: #e8a598;
-  --ops-brand-accent-strong: #d4897a;
+  --ops-brand-primary: #002147;
+  --ops-brand-accent: #c59434;
+  --ops-brand-accent-strong: #a67c2e;
 
-  --ops-bg-app: #f3f4f6;
+  --ops-bg-app: #eef1f6;
   --ops-bg-surface: #ffffff;
   --ops-bg-nav: #1e293b;
   --ops-bg-nav-hover: rgba(255, 255, 255, 0.08);

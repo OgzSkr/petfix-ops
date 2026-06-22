@@ -10,6 +10,17 @@
     { id: 'yemeksepeti', pushChannel: 'yemeksepeti', planned: false }
   ];
 
+  const MASTER_LIST_LABEL = 'Ürün listesi';
+  const CHANNEL_MENU_LABELS = { ys: 'Yemeksepeti', tgo: 'Trendyol GO', getir: 'Getir' };
+
+  function channelMenuLabel(kindOrLabel) {
+    return CHANNEL_MENU_LABELS[kindOrLabel] || kindOrLabel;
+  }
+
+  function channelMenuProgressLabel(label) {
+    return `${channelMenuLabel(label)} menüsü`;
+  }
+
   const STATUS_LABELS = {
     ready: 'Hazır',
     diff: 'Fark Var',
@@ -19,7 +30,7 @@
 
   const MATCHING_STATUS_LABELS = {
     unmapped: 'Eşleşmemiş',
-    missing_master: 'BenimPOS\'ta yok',
+    missing_master: 'Ana listede yok',
     auto_matched: 'Otomatik öneri',
     pending: 'Onay bekliyor',
     review_required: 'İnceleme gerekli',
@@ -28,7 +39,7 @@
   };
 
   const ORPHAN_STATUS_LABELS = {
-    missing_master: 'BenimPOS\'ta yok',
+    missing_master: 'Ana listede yok',
     unmapped: 'Eşleşmemiş',
     pending: 'Onay bekliyor',
     review_required: 'İnceleme gerekli',
@@ -49,6 +60,7 @@
   let viewMode = 'masters';
   let matchingRowsCache = [];
   let matchingSafeConfirmable = null;
+  let cleanupSuggestionsCache = [];
 
   const state = {
     q: '',
@@ -57,7 +69,7 @@
     channelSaleStatus: '',
     syncStatus: '',
     stock: '',
-    matchStatus: '',
+    matchStatus: 'action',
     confirmableOnly: ''
   };
 
@@ -146,6 +158,14 @@
     return `<span class="bp-channel-badge">${logo}<span>${esc(label || channelLabel(channelId))}</span></span>`;
   }
 
+  function renderChannelIconOnly(channelId, label) {
+    const text = label || channelLabel(channelId);
+    const logo = window.PetFixChannelLogos?.render
+      ? window.PetFixChannelLogos.render(channelId, { size: 'sm' })
+      : esc(text);
+    return `<span class="bp-channel-icon-only" title="${escAttr(text)}" aria-label="${escAttr(text)}">${logo}</span>`;
+  }
+
   function formatPosStock(value) {
     const n = Number(value);
     if (!Number.isFinite(n)) return { text: '—', cls: 'is-unknown' };
@@ -166,8 +186,51 @@
     els.status.classList.toggle('is-error', resolved === 'error');
     els.status.classList.toggle('is-success', resolved === 'success');
     els.status.classList.toggle('is-warn', resolved === 'warn');
-    if (text) {
+    if (text && !els.syncProgress?.hidden) {
       els.status.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    } else if (text) {
+      els.status.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }
+
+  function setSyncProgress({ label = 'Güncelleniyor', percent = 0, detail = '', tone = 'running' } = {}) {
+    if (!els.syncProgress) return;
+    const safePct = Math.max(0, Math.min(100, Number(percent) || 0));
+    els.syncProgress.hidden = false;
+    els.syncProgress.classList.toggle('is-complete', tone === 'success');
+    els.syncProgress.classList.toggle('is-error', tone === 'error');
+    els.syncProgress.classList.toggle('is-running', tone === 'running' && safePct < 100);
+    if (els.syncProgressLabel) els.syncProgressLabel.textContent = label;
+    if (els.syncProgressPct) els.syncProgressPct.textContent = `${safePct}%`;
+    if (els.syncProgressBar) els.syncProgressBar.style.width = `${safePct}%`;
+    if (els.syncProgressTrack) els.syncProgressTrack.setAttribute('aria-valuenow', String(safePct));
+    if (els.syncProgressDetail) els.syncProgressDetail.textContent = detail || '';
+
+    if (window.PfStatus) {
+      if (tone === 'error') {
+        window.PfStatus.error(label, detail);
+      } else if (tone === 'success') {
+        window.PfStatus.success(label, detail || 'İşlem tamamlandı');
+      } else if (safePct > 0 && safePct < 100) {
+        window.PfStatus.progress(label, safePct, detail);
+      } else {
+        window.PfStatus.loading(label, detail);
+      }
+    }
+  }
+
+  function clearSyncProgress(delayMs = 2500) {
+    if (!els.syncProgress) return;
+    clearTimeout(clearSyncProgress._timer);
+    clearSyncProgress._timer = setTimeout(() => {
+      if (els.syncProgress) els.syncProgress.hidden = true;
+    }, delayMs);
+  }
+
+  function setSyncButtonsDisabled(disabled) {
+    for (const id of ['bpSyncMasterBtn', 'bpSyncYsBtn', 'bpSyncTgoBtn', 'bpSyncGetirBtn']) {
+      const btn = document.getElementById(id);
+      if (btn) btn.disabled = disabled;
     }
   }
 
@@ -194,10 +257,10 @@
   function humanizePushError(error, channel) {
     const message = String(error?.message || error || 'Bilinmeyen hata');
     if (/tekrarlı stok fiyat|çok sık güncelleme|429/.test(message)) {
-      return 'Trendyol Go: çok sık güncelleme — 2–3 dakika bekleyip tekrar deneyin';
+      return 'Uber Eats: çok sık güncelleme — 2–3 dakika bekleyip tekrar deneyin';
     }
     if (channel === 'trendyol_go' && /TGO batch/.test(message)) {
-      return message.replace(/^TGO batch [^:]+:\s*/, 'Trendyol Go reddetti: ');
+      return message.replace(/^TGO batch [^:]+:\s*/, 'Uber Eats reddetti: ');
     }
     return message;
   }
@@ -339,24 +402,64 @@
     return rowsCache.find((row) => String(row.benimposBarcode || '').trim() === code) || null;
   }
 
+  function masterChannelMapping(row, channelId) {
+    return (row.channelMappingDetails || []).find((item) => item.channelId === channelId) || null;
+  }
+
+  function canRemoveChannelMapping(cp, mappingDetail) {
+    if (mappingDetail?.channelProductId) return true;
+    if (!cp?.channelProductId) return false;
+    return Boolean(cp.canUnmap || cp.hasMapping);
+  }
+
+  function renderChannelDupRow(channel, item) {
+    const wrongClass = item.likelyWrong ? ' bp-channel-dup-row--wrong' : '';
+    const label = item.likelyWrong ? 'Muhtemelen hatalı eşleşme — kaldır' : `${item.channelProductId} eşleştirmesini kaldır`;
+    return `<div class="bp-channel-dup-row${wrongClass}">
+      <div class="bp-channel-dup-row-head">
+        <span class="bp-channel-dup-code" title="${escAttr(item.channelName || item.channelProductId || '')}">${esc(item.channelProductId || '—')}</span>
+        <span class="bp-channel-dup-price">${formatMoney(item.channelSalePrice)}</span>
+      </div>
+      <button type="button" class="bp-unmap-btn bp-unmap-btn--sm" data-unmap-channel="${escAttr(channel.id)}" data-unmap-by-product="1" data-channel-product="${escAttr(item.channelProductId)}" title="${escAttr(label)}" aria-label="Eşleştirmeyi kaldır">Kaldır</button>
+    </div>`;
+  }
+
   function renderChannelCell(row, channel) {
     if (channel.planned) {
       return `<td class="bp-col-channel bp-channel-cell"><span class="bp-channel-empty" title="Getir stok/fiyat gönderimi yakında">—</span></td>`;
     }
     const cp = channelPriceRow(row, channel.id);
-    if (!cp?.linked) {
+    const mappingDetail = masterChannelMapping(row, channel.id);
+    const dupGroup = duplicateMappingGroup(row, channel.id);
+    if (dupGroup && (dupGroup.items || []).length > 1) {
+      return `<td class="bp-col-channel bp-channel-cell bp-channel-cell--dup">
+        <div class="bp-channel-dup-list">${(dupGroup.items || []).map((item) => renderChannelDupRow(channel, item)).join('')}</div>
+      </td>`;
+    }
+    if (!cp?.linked && !mappingDetail) {
       return '<td class="bp-col-channel bp-channel-cell"><span class="bp-channel-empty">—</span></td>';
     }
     const onSale = isChannelOnSale(cp);
     const saleClass = onSale ? 'is-on' : 'is-off';
     const saleTitle = onSale ? 'Satışta — stok gönder' : 'Satışta değil — stok gönder';
-    const diff = formatDiffPct(cp.saleDiffPct);
+    const diff = formatDiffPct(cp?.saleDiffPct);
     const barcode = String(row.benimposBarcode || '').trim();
     const canPush = Boolean(channel.pushChannel);
     const priceTitle = canPush ? 'Fiyat gönder' : 'Kanal fiyatı';
+    const channelProductId = String(cp?.channelProductId || mappingDetail?.channelProductId || '').trim();
+    const channelPrice = cp?.channelPrice ?? mappingDetail?.channelSalePrice ?? null;
+    const canUnmap = canRemoveChannelMapping(cp, mappingDetail);
+    const dupBadge = dupGroup
+      ? `<span class="bp-channel-dup-badge" title="${escAttr(duplicateMappingTitle(dupGroup))}">×${esc(dupGroup.count)}</span>`
+      : '';
+    const unmapBtn = canUnmap
+      ? `<button type="button" class="bp-unmap-btn" data-unmap-channel="${escAttr(channel.id)}" data-unmap-barcode="${escAttr(barcode)}" data-channel-product="${escAttr(channelProductId)}" title="${escAttr(channelLabel(channel.id))} eşleştirmesini kaldır" aria-label="Eşleştirmeyi kaldır">Kaldır</button>`
+      : (cp?.barcodeMatchOnly ? '<div class="bp-channel-link-hint">Kayıtlı eşleştirme yok</div>' : '');
     return `<td class="bp-col-channel bp-channel-cell">
-      <button type="button" class="bp-channel-price${canPush ? ' is-clickable' : ''}" ${canPush ? `data-price-push="${escAttr(channel.id)}" data-barcode="${escAttr(barcode)}"` : ''} title="${escAttr(priceTitle)}">${formatMoney(cp.channelPrice)}</button>
+      <button type="button" class="bp-channel-price${canPush ? ' is-clickable' : ''}" ${canPush ? `data-price-push="${escAttr(channel.id)}" data-barcode="${escAttr(barcode)}"` : ''} title="${escAttr(priceTitle)}">${formatMoney(channelPrice)}</button>
+      ${dupBadge}
       <button type="button" class="bp-sale-indicator ${saleClass}${canPush ? ' is-clickable' : ''}" ${canPush ? `data-stock-push="${escAttr(channel.id)}" data-barcode="${escAttr(barcode)}"` : ''} title="${escAttr(canPush ? saleTitle : (onSale ? 'Satışta' : 'Satışta değil'))}" aria-label="${escAttr(canPush ? saleTitle : (onSale ? 'Satışta' : 'Satışta değil'))}"></button>
+      ${unmapBtn}
       <div class="bp-channel-diff ${diff.cls}">${esc(diff.text)}</div>
     </td>`;
   }
@@ -368,19 +471,10 @@
     return `<img class="bp-product-thumb" src="/api/product-thumb-img?barcode=${escAttr(barcode)}" alt="" width="40" height="40" loading="lazy" onerror="this.classList.add('bp-product-thumb--empty'); this.removeAttribute('src'); this.textContent='—';">`;
   }
 
-  function renderStatusBadge(code) {
-    const label = STATUS_LABELS[code] || code || '—';
-    const cls = code === 'ready' ? 'ready'
-      : code === 'diff' ? 'diff'
-        : code === 'no-stock' ? 'no-stock'
-          : 'waiting';
-    return `<span class="bp-status-badge ${cls}">${esc(label)}</span>`;
-  }
-
   function renderRows(rows) {
     rowsCache = applyPendingChannelPriceUpdates(rows);
     if (!rows.length) {
-      els.body.innerHTML = `<tr><td colspan="${tableColspan()}" class="bp-empty">Ürün bulunamadı. «BenimPOS Sync» ile listeyi güncelleyin.</td></tr>`;
+      els.body.innerHTML = `<tr><td colspan="${tableColspan()}" class="bp-empty">Ürün bulunamadı. «Ürün listesini yenile» ile kasadan listeyi indirin.</td></tr>`;
       return;
     }
 
@@ -390,44 +484,96 @@
       const category = String(row.categoryName || '').trim();
       const meta = [brand, category].filter(Boolean).join(' • ');
       const checked = selected.has(barcode) ? ' checked' : '';
+      const autoStockChecked = row.autoStockSync !== false ? ' checked' : '';
 
       return `<tr data-barcode="${escAttr(barcode)}" data-id="${escAttr(row.id)}" class="${selected.has(barcode) ? 'is-selected' : ''}">
         <td class="bp-col-check"><input type="checkbox" class="bp-row-check" data-barcode="${escAttr(barcode)}" aria-label="Seç"${checked}></td>
+        <td class="bp-col-auto-stock">
+          <input type="checkbox" class="bp-auto-stock-check" data-master-id="${escAttr(row.id)}" data-barcode="${escAttr(barcode)}" aria-label="Otomatik stok gönder"${autoStockChecked} title="BenimPOS stok değişince kanallara otomatik gönder">
+        </td>
         <td class="bp-col-product">
           <div class="bp-product-cell">
             ${renderProductThumb(barcode)}
             <div>
               <div class="bp-product-name">${esc(row.name || '—')}</div>
+              ${renderDuplicateMappingBadge(row)}
+              <div class="bp-code-stack bp-code-stack--compact">
+                <span class="bp-barcode bp-barcode--sub">
+                  <span>${esc(barcode || '—')}</span>
+                  ${barcode ? `<button type="button" class="bp-copy-btn" data-copy-barcode="${escAttr(barcode)}" title="Kopyala">⧉</button>` : ''}
+                </span>
+              </div>
               ${meta ? `<div class="bp-product-meta">${esc(meta)}</div>` : ''}
             </div>
           </div>
         </td>
-        <td>
-          <span class="bp-barcode">
-            <span>${esc(barcode || '—')}</span>
-            ${barcode ? `<button type="button" class="bp-copy-btn" data-copy-barcode="${escAttr(barcode)}" title="Kopyala">⧉</button>` : ''}
-          </span>
-        </td>
         ${renderPosStockCell(row.stock)}
         <td class="bp-num bp-pos-price">${formatMoney(row.salePrice1)}</td>
         ${DISPLAY_CHANNELS.map((channel) => renderChannelCell(row, channel)).join('')}
-        <td class="bp-col-status">${renderStatusBadge(row.syncStatus)}</td>
       </tr>`;
     }).join('');
 
     syncSelectAllState();
+    syncAutoStockSelectAllState();
+    updateSelectionToolbar();
   }
 
   function tableColspan() {
-    return isMatchingView() ? 10 : 9;
+    return isMatchingView() ? 7 : 8;
   }
 
   function channelLabel(channelId) {
     const hit = DISPLAY_CHANNELS.find((item) => item.id === channelId);
-    if (hit?.id === 'uber-eats') return 'Trendyol GO';
+    if (hit?.id === 'uber-eats') return 'Uber Eats';
     if (hit?.id === 'yemeksepeti') return 'Yemeksepeti';
     if (hit?.id === 'getir') return 'Getir';
     return channelId || 'Kanal';
+  }
+
+  function duplicateMappingGroup(row, channelId) {
+    return (row.duplicateChannelMappings?.byChannel || [])
+      .find((group) => group.channelId === channelId) || null;
+  }
+
+  function duplicateMappingTitle(group) {
+    if (!group) return '';
+    const lines = (group.items || []).map((item) => {
+      const flag = item.likelyWrong ? ' (muhtemelen hatalı)' : '';
+      return `${item.channelBarcode || item.channelProductId}: ${item.channelName || '—'}${flag}`;
+    });
+    return `${channelLabel(group.channelId)} kanalında ${group.count} eşleşme.\n${lines.join('\n')}`;
+  }
+
+  function renderDuplicateMappingBadge(row) {
+    const dup = row.duplicateChannelMappings;
+    if (!dup?.hasDuplicates) return '';
+    const parts = (dup.byChannel || []).map((group) => `${channelLabel(group.channelId)} ×${group.count}`);
+    const wrong = (dup.byChannel || [])
+      .flatMap((group) => group.likelyWrong || [])
+      .map((item) => item.channelBarcode || item.channelProductId)
+      .filter(Boolean);
+    const title = [
+      'Bu BenimPOS ürününe aynı kanaldan birden fazla liste bağlı.',
+      parts.join(' · '),
+      wrong.length ? `Kaldırılması önerilen: ${wrong.join(', ')}` : ''
+    ].filter(Boolean).join(' ');
+    return `<span class="bp-dup-map-badge" title="${escAttr(title)}">Çift eşleşme · ${esc(parts.join(' · '))}</span>`;
+  }
+
+  function isConfirmedMatchingQueue() {
+    return state.matchStatus === 'confirmed';
+  }
+
+  function matchingStatusFilter() {
+    const queueModes = new Set(['action', 'confirmed', '']);
+    return queueModes.has(state.matchStatus) ? '' : state.matchStatus;
+  }
+
+  function normalizeMatchingMatchStatus(value) {
+    const raw = String(value || '').trim();
+    if (raw === 'confirmed') return 'confirmed';
+    if (!raw || raw === 'queue') return 'action';
+    return raw;
   }
 
   function updateTableHead() {
@@ -436,12 +582,9 @@
       els.tableHead.innerHTML = `<tr>
         <th class="bp-col-thumb" scope="col">Görsel</th>
         <th class="bp-col-product" scope="col">Kanal ürün adı</th>
-        <th scope="col">Marka</th>
-        <th scope="col">Barkod / SKU</th>
-        <th scope="col">Kanal</th>
-        <th scope="col">Kanal fiyatı</th>
+        <th class="bp-col-channel bp-col-channel-icon" scope="col" aria-label="Kanal">Kanal</th>
         <th scope="col">Eşleşme durumu</th>
-        <th scope="col">Önerilen BenimPOS ürünü</th>
+        <th scope="col">${isConfirmedMatchingQueue() ? 'Bağlı BenimPOS ürünü' : 'Önerilen BenimPOS ürünü'}</th>
         <th scope="col">Güven</th>
         <th class="bp-col-actions" scope="col">İşlemler</th>
       </tr>`;
@@ -449,20 +592,87 @@
     }
     els.tableHead.innerHTML = `<tr>
       <th class="bp-col-check" scope="col"><input type="checkbox" id="bpSelectAll" aria-label="Tümünü seç"></th>
+      <th class="bp-col-auto-stock" scope="col" title="BenimPOS stok değişince kanallara otomatik gönder">
+        <input type="checkbox" id="bpAutoStockSelectAll" aria-label="Sayfadaki tüm ürünlerde otomatik stok">
+        <span class="bp-col-auto-stock-label">Otom. stok</span>
+      </th>
       <th class="bp-col-product" scope="col">Ürün</th>
-      <th scope="col">Barkod</th>
-      <th scope="col">BenimPOS Stok</th>
-      <th scope="col">POS Satış</th>
+      <th scope="col">Kasa stok</th>
+      <th scope="col">Kasa satış</th>
       ${DISPLAY_CHANNELS.map((ch) => {
         const logo = window.PetFixChannelLogos?.render
           ? window.PetFixChannelLogos.render(ch.id, { size: 'sm' })
           : esc(ch.id);
         return `<th class="bp-col-channel" scope="col"><div class="bp-channel-head">${logo}</div></th>`;
       }).join('')}
-      <th class="bp-col-status" scope="col">Durum</th>
     </tr>`;
     els.selectAll = document.getElementById('bpSelectAll');
+    els.autoStockSelectAll = document.getElementById('bpAutoStockSelectAll');
     els.selectAll?.addEventListener('change', onSelectAllChange);
+    els.autoStockSelectAll?.addEventListener('change', onAutoStockSelectAllChange);
+  }
+
+  function syncAutoStockSelectAllState() {
+    if (!els.autoStockSelectAll) return;
+    const checks = els.body?.querySelectorAll('.bp-auto-stock-check') || [];
+    if (!checks.length) {
+      els.autoStockSelectAll.checked = false;
+      els.autoStockSelectAll.indeterminate = false;
+      return;
+    }
+    const checkedCount = [...checks].filter((node) => node.checked).length;
+    els.autoStockSelectAll.checked = checkedCount === checks.length;
+    els.autoStockSelectAll.indeterminate = checkedCount > 0 && checkedCount < checks.length;
+  }
+
+  async function setMasterAutoStock(masterId, enabled) {
+    await apiPost('/api/product-matching/update-master', {
+      masterProductId: masterId,
+      autoStockSync: enabled
+    });
+  }
+
+  async function setVisibleAutoStock(enabled) {
+    const checks = [...(els.body?.querySelectorAll('.bp-auto-stock-check') || [])];
+    const masterProductIds = checks.map((node) => node.getAttribute('data-master-id')).filter(Boolean);
+    if (!masterProductIds.length) return;
+    await apiPost('/api/product-matching/master-auto-stock-bulk', {
+      masterProductIds,
+      enabled
+    });
+    checks.forEach((node) => {
+      node.checked = enabled;
+    });
+    syncAutoStockSelectAllState();
+  }
+
+  function onAutoStockSelectAllChange() {
+    if (!els.autoStockSelectAll) return;
+    setVisibleAutoStock(els.autoStockSelectAll.checked).catch((error) => {
+      notifyUser(error.message, 'error');
+      syncAutoStockSelectAllState();
+    });
+  }
+
+  async function triggerStockAutoSyncAfterMaster() {
+    try {
+      const prefsRes = await authFetch('/api/ops/preferences');
+      const prefs = await prefsRes.json().catch(() => ({}));
+      if (!prefs?.preferences?.stockAutoSyncEnabled) return;
+      await apiPost('/api/ops/stock-auto-sync/run', {});
+    } catch {
+      // Sessiz — master sync zaten başarılı
+    }
+  }
+
+  function updateMatchingToolbar() {
+    const confirmed = isConfirmedMatchingQueue();
+    if (els.matchingToolbarHint) {
+      els.matchingToolbarHint.innerHTML = confirmed
+        ? 'Daha önce onaylanmış kanal eşleşmeleri. Yanlış bağlantıları <strong>Kaldır</strong> ile silebilirsiniz.'
+        : 'Barkod eşleşmesi yapar; güven skoru <strong>%95+</strong> (barkod eşleşmesinde isim farkı tolere edilir) ürünleri otomatik onaylar.';
+    }
+    if (els.autoMatchBtn) els.autoMatchBtn.hidden = confirmed;
   }
 
   function setFilterPanelMode() {
@@ -478,6 +688,7 @@
     if (els.selectAllWrap) els.selectAllWrap.hidden = matching;
     if (els.exportBtn) els.exportBtn.hidden = matching;
     if (els.matchingToolbar) els.matchingToolbar.hidden = !matching;
+    if (matching) updateMatchingToolbar();
     if (els.channel) {
       els.channel.querySelector('option[value=""]')?.toggleAttribute('disabled', false);
     }
@@ -485,6 +696,9 @@
 
   function setViewMode(nextView) {
     viewMode = nextView === 'matching' || nextView === 'orphans' ? 'matching' : 'masters';
+    if (isMatchingView() && (!state.matchStatus || state.matchStatus === '')) {
+      state.matchStatus = 'action';
+    }
     document.querySelectorAll('.bp-view-tab').forEach((node) => {
       node.classList.toggle('is-active', node.getAttribute('data-view') === viewMode);
     });
@@ -493,14 +707,78 @@
     setFilterPanelMode();
     updateTableHead();
     syncFiltersToUrl();
+    loadCleanupSuggestions();
     loadProducts();
+  }
+
+  async function loadCleanupSuggestions() {
+    if (!els.cleanupBanner) return;
+    if (isMatchingView()) {
+      els.cleanupBanner.hidden = true;
+      return;
+    }
+    try {
+      const params = new URLSearchParams({ limit: '20' });
+      if (state.channelFocus) params.set('channelId', state.channelFocus);
+      const data = await authFetch(`/api/product-matching/cleanup-suggestions?${params.toString()}`);
+      cleanupSuggestionsCache = Array.isArray(data?.items) ? data.items : [];
+      renderCleanupBanner(data);
+    } catch {
+      els.cleanupBanner.hidden = true;
+      cleanupSuggestionsCache = [];
+    }
+  }
+
+  function renderCleanupBanner(data) {
+    if (!els.cleanupBanner || !els.cleanupList) return;
+    const items = cleanupSuggestionsCache;
+    if (!items.length) {
+      els.cleanupBanner.hidden = true;
+      return;
+    }
+    els.cleanupBanner.hidden = false;
+    const total = Number(data?.total) || items.length;
+    if (els.cleanupLead) {
+      els.cleanupLead.textContent = total > items.length
+        ? `${total} geçersiz eşleştirme — ilk ${items.length} gösteriliyor. BenimPOS veya kanal kataloğundan silinen ürünler.`
+        : `${total} geçersiz eşleştirme — BenimPOS veya kanal kataloğundan silinen ürünler.`;
+    }
+    els.cleanupList.innerHTML = items.map((item) => `
+      <li class="bp-cleanup-item">
+        <div>
+          <div class="bp-cleanup-item-text">${esc(item.message || '')}</div>
+          <div class="bp-cleanup-item-meta">${esc(item.benimposBarcode || '—')}${item.channelLabel ? ` · ${esc(item.channelLabel)}` : ''}</div>
+        </div>
+        <div class="bp-cleanup-item-actions">
+          <button type="button" class="bp-btn bp-btn-ghost bp-cleanup-dismiss-btn" data-dismiss-id="${escAttr(item.id)}">Yoksay</button>
+          <button type="button" class="bp-btn bp-btn-danger bp-cleanup-apply-btn" data-apply-id="${escAttr(item.id)}">Kaldır</button>
+        </div>
+      </li>
+    `).join('');
+  }
+
+  async function applyCleanupSuggestionIds(ids, { all = false } = {}) {
+    const payload = all ? { all: true, channelId: state.channelFocus || undefined } : { suggestionIds: ids };
+    const data = await apiPost('/api/product-matching/apply-cleanup-suggestions', payload);
+    notifyUser(`${data.removed || 0} eşleştirme kaldırıldı.`, 'success');
+    await loadCleanupSuggestions();
+    await loadProducts({ silent: true });
+    return data;
+  }
+
+  async function dismissCleanupSuggestionIds(ids, { all = false } = {}) {
+    const payload = all ? { all: true, channelId: state.channelFocus || undefined } : { suggestionIds: ids };
+    await apiPost('/api/product-matching/dismiss-cleanup-suggestions', payload);
+    await loadCleanupSuggestions();
   }
 
   function renderMatchingRows(rows) {
     matchingRowsCache = rows;
     rowsCache = [];
     if (!rows.length) {
-      const hint = 'Eşleştirme bekleyen kanal ürünü bulunamadı. Önce katalog sync çalıştırın veya filtreleri gevşetin.';
+      const hint = isConfirmedMatchingQueue()
+        ? 'Onaylı eşleşme bulunamadı. Durum filtresinde «Onaylı eşleşmeler» seçili; arama veya kanal filtresini genişletin.'
+        : 'Eşleştirme bekleyen kanal ürünü bulunamadı. Onaylı kayıtlar için Durum → «Onaylı eşleşmeler»i seçin.';
       els.body.innerHTML = `<tr><td colspan="${tableColspan()}" class="bp-empty">${hint}</td></tr>`;
       return;
     }
@@ -509,28 +787,27 @@
       const key = `${row.channelId}:${row.channelProductId}`;
       const barcode = String(row.channelBarcode || '').trim();
       const sku = String(row.channelSku || row.channelStockCode || row.channelProductId || '').trim();
-      const brand = String(row.channelBrand || '').trim() || '—';
-      const price = Number(row.salePrice);
+      const brand = String(row.channelBrand || '').trim();
+      const brandLine = brand ? `<div class="bp-product-meta">${esc(brand)}</div>` : '';
+      const skuLine = sku && sku !== barcode ? `<span class="bp-sku">${esc(sku)}</span>` : '';
       const canConfirm = Boolean(row.canConfirm && row.suggestedMasterProductId);
+      const canRemove = Boolean(row.mappingStatus && row.mappingStatus !== 'unmapped' && row.mappingStatus !== 'missing_master');
       return `<tr data-match-key="${escAttr(key)}" data-channel="${escAttr(row.channelId)}" data-channel-product="${escAttr(row.channelProductId)}">
         <td class="bp-col-thumb">${renderChannelImage(row)}</td>
         <td class="bp-col-product">
           <div class="bp-match-product bp-match-product--text">
             <div>
               <div class="bp-product-name">${esc(row.channelName || '—')}</div>
-              ${row.systemComment ? `<div class="bp-product-meta">${esc(row.systemComment)}</div>` : ''}
+              ${brandLine}
+              <div class="bp-code-stack bp-code-stack--compact">
+                <span class="bp-barcode"><span>${esc(barcode || '—')}</span>${barcode ? `<button type="button" class="bp-copy-btn" data-copy-barcode="${escAttr(barcode)}" title="Kopyala">⧉</button>` : ''}</span>
+                ${skuLine}
+              </div>
+              ${row.systemComment ? `<div class="bp-product-meta bp-product-meta--note">${esc(row.systemComment)}</div>` : ''}
             </div>
           </div>
         </td>
-        <td>${esc(brand)}</td>
-        <td>
-          <div class="bp-code-stack">
-            <span class="bp-barcode"><span>${esc(barcode || '—')}</span>${barcode ? `<button type="button" class="bp-copy-btn" data-copy-barcode="${escAttr(barcode)}" title="Kopyala">⧉</button>` : ''}</span>
-            <span class="bp-sku">${esc(sku || '—')}</span>
-          </div>
-        </td>
-        <td>${renderChannelBadge(row.channelId, row.channelLabel)}</td>
-        <td class="bp-num">${formatMoney(Number.isFinite(price) && price > 0 ? price : null)}</td>
+        <td class="bp-col-channel bp-col-channel-icon">${renderChannelIconOnly(row.channelId, row.channelLabel)}</td>
         <td>${renderMatchingStatusBadge(row.mappingStatus)}</td>
         <td>${renderMasterSuggestion(row)}</td>
         <td>${renderConfidenceBadge(row.confidenceScore)}</td>
@@ -538,6 +815,7 @@
           <div class="bp-match-actions">
             <button type="button" class="bp-btn bp-btn-primary bp-btn-xs" data-confirm-match="${escAttr(key)}" ${canConfirm ? '' : 'disabled'} title="Öneriyi onayla">Eşleştir</button>
             <button type="button" class="bp-btn bp-btn-ghost bp-btn-xs" data-search-master="${escAttr(key)}" title="BenimPOS ürünü ara">Ara</button>
+            ${canRemove ? `<button type="button" class="bp-btn bp-btn-ghost bp-btn-xs bp-btn-danger" data-remove-match="${escAttr(key)}" title="Eşleştirmeyi kaldır">Kaldır</button>` : ''}
           </div>
         </td>
       </tr>`;
@@ -546,6 +824,92 @@
 
   function findMatchingRow(key) {
     return matchingRowsCache.find((row) => `${row.channelId}:${row.channelProductId}` === key) || null;
+  }
+
+  async function removeChannelMapping(channelId, channelProductId, { productName = '', benimposBarcode = '' } = {}) {
+    const label = channelLabel(channelId);
+    const name = String(productName || '').trim();
+    const prompt = name
+      ? `${name}\n\n${label} eşleştirmesini kaldırmak istediğinize emin misiniz?`
+      : `${label} eşleştirmesini kaldırmak istediğinize emin misiniz?`;
+    if (!window.confirm(prompt)) return;
+
+    setStatus('Eşleştirme kaldırılıyor…');
+    const barcode = String(benimposBarcode || '').trim();
+    if (barcode) {
+      await apiPost('/api/product-matching/remove-master-channel-mapping', {
+        channelId,
+        benimposBarcode: barcode
+      });
+    } else if (channelProductId) {
+      await apiPost('/api/product-matching/remove-mapping', {
+        channelId,
+        channelProductId
+      });
+    } else {
+      throw new Error('Kaldırılacak eşleştirme bulunamadı.');
+    }
+    notifyUser('Eşleştirme kaldırıldı.', 'success');
+    await loadProducts({ silent: true });
+  }
+
+  async function removeMatchRow(row) {
+    if (!row?.channelId || !row?.channelProductId) {
+      notifyUser('Kaldırılacak eşleştirme bulunamadı.', 'warn');
+      return;
+    }
+    await removeChannelMapping(row.channelId, row.channelProductId, { productName: row.channelName });
+  }
+
+  async function unmapSelectedMasters() {
+    const barcodes = selectedBarcodes();
+    if (!barcodes.length) {
+      notifyUser('Önce en az bir ürün seçin.', 'warn');
+      return;
+    }
+
+    const channelId = String(state.channelFocus || '').trim();
+    if (channelId) {
+      const label = channelLabel(channelId);
+      if (!window.confirm(`${barcodes.length} ürün için ${label} eşleştirmesi kaldırılacak. Devam?`)) return;
+      setStatus('Eşleştirmeler kaldırılıyor…');
+      const data = await apiPost('/api/product-matching/remove-master-channel-mappings-bulk', {
+        channelId,
+        barcodes
+      });
+      const removed = Number(data.removed) || 0;
+      const notFound = Number(data.notFound) || 0;
+      notifyUser(
+        removed
+          ? `${removed} eşleştirme kaldırıldı${notFound ? ` · ${notFound} üründe kayıt yoktu` : ''}.`
+          : 'Seçili ürünlerde kaldırılacak eşleştirme bulunamadı. Getir fiyatı yalnızca barkod eşleşmesiyse kayıt silinmez.',
+        removed ? 'success' : 'warn'
+      );
+    } else {
+      const masterIds = [...new Set(
+        barcodes.map((code) => findRowByBarcode(code)?.id).filter(Boolean)
+      )];
+      if (!masterIds.length) {
+        notifyUser('Seçili satırlarda ana ürün kimliği bulunamadı.', 'warn');
+        return;
+      }
+      if (!window.confirm(`${masterIds.length} ürünün tüm kanal eşleştirmeleri kaldırılacak. Devam?`)) return;
+      setStatus('Eşleştirmeler kaldırılıyor…');
+      const data = await apiPost('/api/product-matching/master-pool-bulk', {
+        action: 'unmap',
+        masterProductIds: masterIds
+      });
+      const removed = Number(data.removed) || 0;
+      notifyUser(
+        removed
+          ? `${removed} eşleştirme kaldırıldı.`
+          : (data.message || 'Seçili ürünlerde kaldırılacak eşleştirme yok.'),
+        removed ? 'success' : 'warn'
+      );
+    }
+
+    selected.clear();
+    await loadProducts({ silent: true });
   }
 
   async function confirmMatchRow(row) {
@@ -641,11 +1005,12 @@
     const params = new URLSearchParams({
       page: String(page),
       limit: String(limit),
-      queue: 'action'
+      queue: isConfirmedMatchingQueue() ? 'confirmed' : 'action'
     });
     if (state.q) params.set('q', state.q);
     if (state.channelFocus) params.set('channelId', state.channelFocus);
-    if (state.matchStatus) params.set('status', state.matchStatus);
+    const statusFilter = matchingStatusFilter();
+    if (statusFilter) params.set('status', statusFilter);
     if (state.confirmableOnly === '1') params.set('quality', 'confirmable');
     return params;
   }
@@ -694,7 +1059,7 @@
     if (state.channelSaleStatus) count += 1;
     if (state.syncStatus) count += 1;
     if (state.stock) count += 1;
-    if (state.matchStatus) count += 1;
+    if (state.matchStatus && state.matchStatus !== 'action') count += 1;
     if (state.confirmableOnly) count += 1;
     return count;
   }
@@ -709,7 +1074,7 @@
       if (state.syncStatus) params.set('status', state.syncStatus);
       if (state.stock) params.set('stock', state.stock);
     } else {
-      if (state.matchStatus) params.set('matchStatus', state.matchStatus);
+      if (state.matchStatus && state.matchStatus !== 'action') params.set('matchStatus', state.matchStatus);
       if (state.confirmableOnly === '1') params.set('confirmable', '1');
     }
     if (state.channelFocus) params.set('channel', state.channelFocus);
@@ -730,7 +1095,10 @@
     state.channelSaleStatus = params.get('channelSale') || params.get('channelSaleStatus') || '';
     state.syncStatus = params.get('status') || params.get('syncStatus') || '';
     state.stock = params.get('stock') || '';
-    state.matchStatus = params.get('matchStatus') || '';
+    const urlMatchStatus = params.get('matchStatus') || (params.get('queue') === 'confirmed' ? 'confirmed' : '');
+    state.matchStatus = isMatchingView()
+      ? normalizeMatchingMatchStatus(urlMatchStatus)
+      : '';
     state.confirmableOnly = params.get('confirmable') === '1' ? '1' : '';
     page = Math.max(1, Number(params.get('page')) || 1);
     limit = Math.max(10, Number(params.get('limit')) || 20);
@@ -745,7 +1113,7 @@
       els.channelSale.value = state.channelFocus ? state.channelSaleStatus : '';
     }
     if (els.statusFilter) els.statusFilter.value = state.syncStatus;
-    if (els.matchStatus) els.matchStatus.value = state.matchStatus;
+    if (els.matchStatus) els.matchStatus.value = state.matchStatus || 'action';
     if (els.confirmable) els.confirmable.value = state.confirmableOnly;
     if (els.stock) els.stock.value = state.stock;
     if (els.pageSize) els.pageSize.value = String(limit);
@@ -797,7 +1165,7 @@
     state.channelSaleStatus = '';
     state.syncStatus = '';
     state.stock = '';
-    state.matchStatus = '';
+    state.matchStatus = 'action';
     state.confirmableOnly = '';
     page = 1;
     applyFiltersToControls();
@@ -811,7 +1179,7 @@
     state.channelFocus = String(els.channel?.value || '').trim();
     state.channelSaleStatus = state.channelFocus ? String(els.channelSale?.value || '').trim() : '';
     state.syncStatus = String(els.statusFilter?.value || '').trim();
-    state.matchStatus = String(els.matchStatus?.value || '').trim();
+    state.matchStatus = normalizeMatchingMatchStatus(els.matchStatus?.value || 'action');
     state.confirmableOnly = String(els.confirmable?.value || '').trim();
     state.stock = String(els.stock?.value || '').trim();
   }
@@ -819,6 +1187,10 @@
   function applyFilters() {
     readFiltersFromControls();
     page = 1;
+    if (isMatchingView()) {
+      updateMatchingToolbar();
+      updateTableHead();
+    }
     syncFiltersToUrl();
     loadProducts();
   }
@@ -826,12 +1198,21 @@
   async function loadProducts(options = {}) {
     if (loading) return;
     loading = true;
+    const silent = Boolean(options.silent);
+    if (!silent && !options.keepStatus) {
+      window.PfStatus?.loading?.(
+        isMatchingView() ? 'Eşleştirme listesi yükleniyor' : 'Ürün listesi yükleniyor'
+      );
+    }
     if (!options.silent) setStatus('Liste yükleniyor…');
     try {
       if (isMatchingView()) {
         await loadMatchingCenter();
         setStatus('');
         syncFiltersToUrl();
+        if (!silent) {
+          window.PfStatus?.success?.('Eşleştirme listesi hazır');
+        }
         return;
       }
 
@@ -852,9 +1233,19 @@
       }
       syncFiltersToUrl();
       if (!options.keepStatus) setStatus('');
+      loadCleanupSuggestions();
+      if (!silent) {
+        window.PfStatus?.success?.(
+          'Ürün listesi hazır',
+          `${Number(total).toLocaleString('tr-TR')} ürün`
+        );
+      }
     } catch (error) {
       els.body.innerHTML = `<tr><td colspan="${tableColspan()}" class="bp-empty">${esc(error.message)}</td></tr>`;
       setStatus(error.message, true);
+      if (!silent) {
+        window.PfStatus?.error?.('Ürün listesi yüklenemedi', error.message);
+      }
     } finally {
       loading = false;
     }
@@ -906,7 +1297,9 @@
   }
 
   async function syncMaster() {
-    setStatus('BenimPOS senkronize ediliyor…');
+    setSyncButtonsDisabled(true);
+    setSyncProgress({ label: MASTER_LIST_LABEL, percent: 0, detail: 'Başlatılıyor…' });
+    setStatus('');
     try {
       const data = await apiPost('/api/product-matching/sync-master', {});
       if (data.started || data.running) {
@@ -917,12 +1310,18 @@
         await pollMasterSyncStatus();
         return;
       }
-      setStatus(`BenimPOS sync tamam — ${data.imported ?? data.total ?? ''} ürün`);
+      setSyncProgress({ label: MASTER_LIST_LABEL, percent: 100, detail: 'Tamamlandı', tone: 'success' });
+      setStatus(`Ürün listesi güncellendi — ${data.imported ?? data.total ?? ''} ürün`, 'success');
+      clearSyncProgress();
       page = 1;
       selected.clear();
       await loadProducts();
+      await triggerStockAutoSyncAfterMaster();
     } catch (error) {
+      setSyncProgress({ label: MASTER_LIST_LABEL, percent: 0, detail: error.message, tone: 'error' });
       setStatus(error.message, true);
+    } finally {
+      setSyncButtonsDisabled(false);
     }
   }
 
@@ -939,25 +1338,75 @@
         throw new Error(data.error || `HTTP ${response.status}`);
       }
       if (data.running) {
-        const msg = data.progress?.message || 'BenimPOS sync devam ediyor…';
-        setStatus(`${msg} (BenimPOS API yavaş — 15–25 dk sürebilir)`);
+        const pct = Number.isFinite(data.percent) ? data.percent : 0;
+        const msg = data.progress?.message || 'Ürün listesi indiriliyor…';
+        setSyncProgress({
+          label: MASTER_LIST_LABEL,
+          percent: pct,
+          detail: `${msg} · API yavaş olabilir (15–25 dk)`
+        });
         continue;
       }
       if (data.error) throw new Error(data.error);
       const result = data.result || {};
-      setStatus(`BenimPOS sync tamam — ${result.imported ?? result.total ?? ''} ürün`);
+      setSyncProgress({
+        label: MASTER_LIST_LABEL,
+        percent: 100,
+        detail: `${result.imported ?? result.total ?? ''} ürün güncellendi`,
+        tone: 'success'
+      });
+      setStatus(`Ürün listesi güncellendi — ${result.imported ?? result.total ?? ''} ürün`, 'success');
+      clearSyncProgress();
       page = 1;
       selected.clear();
       await loadProducts();
+      await triggerStockAutoSyncAfterMaster();
       return;
     }
-    throw new Error('BenimPOS sync zaman aşımı — birkaç dakika sonra listeyi yenileyin.');
+    throw new Error('Ürün listesi indirme zaman aşımı — birkaç dakika sonra sayfayı yenileyin.');
+  }
+
+  async function pollCatalogSyncStatus(channelId, label) {
+    for (let attempt = 0; attempt < 900; attempt += 1) {
+      await sleep(attempt === 0 ? 400 : 1500);
+      const response = await authFetch(
+        `/api/product-matching/sync-catalog/status?channelId=${encodeURIComponent(channelId)}`
+      );
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.error || `HTTP ${response.status}`);
+      }
+      if (data.running) {
+        const pct = Number.isFinite(data.percent) ? data.percent : 0;
+        const msg = data.progress?.message || `${channelMenuProgressLabel(label)} indiriliyor…`;
+        setSyncProgress({ label: channelMenuProgressLabel(label), percent: pct, detail: msg });
+        continue;
+      }
+      if (data.error) throw new Error(data.error);
+      const result = data.result || {};
+      const linked = result.barcodeLink?.linked;
+      setSyncProgress({
+        label: channelMenuProgressLabel(label),
+        percent: 100,
+        detail: linked != null ? `${linked} barkod bağlandı` : 'Tamamlandı',
+        tone: 'success'
+      });
+      setStatus(`${channelMenuProgressLabel(label)} güncellendi${linked != null ? ` · ${linked} barkod bağlandı` : ''}`, 'success');
+      clearSyncProgress();
+      await loadProducts();
+      return result;
+    }
+    throw new Error(`${channelMenuProgressLabel(label)} indirme zaman aşımı — sayfayı yenileyin.`);
   }
 
   async function syncCatalog(kind) {
-    const labels = { ys: 'Yemeksepeti', tgo: 'TGO', getir: 'Getir' };
-    const label = labels[kind] || kind;
-    setStatus(`${label} katalog çekiliyor…`);
+    const channelIds = { ys: 'yemeksepeti', tgo: 'uber-eats', getir: 'getir' };
+    const label = CHANNEL_MENU_LABELS[kind] || kind;
+    const channelId = channelIds[kind] || kind;
+    const progressLabel = channelMenuProgressLabel(label);
+    setSyncButtonsDisabled(true);
+    setSyncProgress({ label: progressLabel, percent: 0, detail: 'Başlatılıyor…' });
+    setStatus('');
     try {
       const paths = {
         ys: '/api/product-matching/sync-yemeksepeti-catalog',
@@ -965,14 +1414,32 @@
         getir: '/api/product-matching/sync-getir-catalog'
       };
       const path = paths[kind];
-      if (!path) throw new Error('Bilinmeyen katalog sync');
+      if (!path) throw new Error('Bilinmeyen kanal menüsü');
       const payload = kind === 'ys' ? { maxPages: 120 } : {};
       const data = await apiPost(path, payload);
-      const linked = data.barcodeLink?.linked;
-      setStatus(`${label} katalog güncellendi${linked != null ? ` · ${linked} barkod bağlandı` : ''}`);
+      if (data.started || data.running) {
+        await pollCatalogSyncStatus(channelId, label);
+        return;
+      }
+      if (data.skipped && data.running) {
+        await pollCatalogSyncStatus(channelId, label);
+        return;
+      }
+      setSyncProgress({ label: progressLabel, percent: 100, detail: 'Tamamlandı', tone: 'success' });
+      const pruned = Number(data.prunedAbsent) || 0;
+      setStatus(
+        pruned > 0
+          ? `${progressLabel} güncellendi · ${pruned} artık menüde olmayan ürün temizlendi`
+          : `${progressLabel} güncellendi`,
+        'success'
+      );
+      clearSyncProgress();
       await loadProducts();
     } catch (error) {
+      setSyncProgress({ label: progressLabel, percent: 0, detail: error.message, tone: 'error' });
       setStatus(error.message, true);
+    } finally {
+      setSyncButtonsDisabled(false);
     }
   }
 
@@ -1109,7 +1576,7 @@
       return;
     }
     const mode = options.mode || 'full';
-    const label = options.displayLabel || (channel === 'yemeksepeti' ? 'Yemeksepeti' : channel === 'getir' ? 'Getir' : 'Trendyol GO');
+    const label = options.displayLabel || (channel === 'yemeksepeti' ? 'Yemeksepeti' : channel === 'getir' ? 'Getir' : 'Uber Eats');
     const actionLabel = mode === 'price' ? 'Fiyat' : mode === 'stock' ? 'Stok' : 'Stok/fiyat';
     pushInFlight = true;
     notifyUser(`${label} — ${actionLabel.toLowerCase()} gönderiliyor…`, 'warn');
@@ -1197,12 +1664,62 @@
       else selected.delete(barcode);
       node.closest('tr')?.classList.toggle('is-selected', node.checked);
     });
+    updateSelectionToolbar();
+  }
+
+  function ensureSelectionToolbar() {
+    if (els.selectionToolbar) return;
+    const anchor = document.getElementById('bpFilterSummary') || document.querySelector('.bp-filter-card');
+    if (!anchor) return;
+    const bar = document.createElement('div');
+    bar.id = 'bpSelectionToolbar';
+    bar.className = 'bp-selection-toolbar';
+    bar.hidden = true;
+    bar.innerHTML =
+      '<span class="bp-selection-count" id="bpSelectionCount">0 seçili</span>' +
+      '<button type="button" class="bp-btn bp-btn-ghost bp-btn-danger" id="bpUnmapSelectedBtn">Eşleştirmeyi kaldır</button>';
+    anchor.insertAdjacentElement('afterend', bar);
+    els.selectionToolbar = bar;
+    els.selectionCount = bar.querySelector('#bpSelectionCount');
+    els.unmapSelectedBtn = bar.querySelector('#bpUnmapSelectedBtn');
+    els.unmapSelectedBtn?.addEventListener('click', () => {
+      unmapSelectedMasters().catch((error) => {
+        setStatus(error.message, true);
+        notifyUser(error.message, 'error');
+      });
+    });
+  }
+
+  function updateSelectionToolbar() {
+    ensureSelectionToolbar();
+    if (!els.selectionToolbar) return;
+    if (isMatchingView()) {
+      els.selectionToolbar.hidden = true;
+      return;
+    }
+    const count = selected.size;
+    els.selectionToolbar.hidden = count === 0;
+    if (els.selectionCount) {
+      els.selectionCount.textContent = `${count} seçili`;
+    }
+    if (els.unmapSelectedBtn) {
+      const channelId = String(state.channelFocus || '').trim();
+      els.unmapSelectedBtn.textContent = channelId
+        ? `${channelLabel(channelId)} eşleştirmesini kaldır`
+        : 'Tüm kanal eşleştirmelerini kaldır';
+    }
   }
 
   function bindEvents() {
     els.body = document.getElementById('bpBody');
     els.tableHead = document.querySelector('.bp-table thead');
     els.status = document.getElementById('bpStatus');
+    els.syncProgress = document.getElementById('bpSyncProgress');
+    els.syncProgressLabel = document.getElementById('bpSyncProgressLabel');
+    els.syncProgressPct = document.getElementById('bpSyncProgressPct');
+    els.syncProgressBar = document.getElementById('bpSyncProgressBar');
+    els.syncProgressTrack = document.getElementById('bpSyncProgressTrack');
+    els.syncProgressDetail = document.getElementById('bpSyncProgressDetail');
     els.search = document.getElementById('bpSearch');
     els.pagination = document.getElementById('bpPagination');
     els.totalMeta = document.getElementById('bpTotalMeta');
@@ -1217,6 +1734,8 @@
     els.stock = document.getElementById('bpFilterStock');
     els.filterSummary = document.getElementById('bpFilterSummary');
     els.matchingToolbar = document.getElementById('bpMatchingToolbar');
+    els.matchingToolbarHint = document.getElementById('bpMatchingToolbarHint');
+    els.autoMatchBtn = document.getElementById('bpAutoMatchBtn');
     els.exportBtn = document.getElementById('bpExportBtn');
     els.modalOverlay = document.getElementById('bpModalOverlay');
     els.modalTitle = document.getElementById('bpModalTitle');
@@ -1224,6 +1743,32 @@
     els.modalBody = document.getElementById('bpModalBody');
     els.modalConfirm = document.getElementById('bpModalConfirm');
     els.modalCancel = document.getElementById('bpModalCancel');
+    els.cleanupBanner = document.getElementById('bpCleanupBanner');
+    els.cleanupLead = document.getElementById('bpCleanupLead');
+    els.cleanupList = document.getElementById('bpCleanupList');
+    els.cleanupApplyAllBtn = document.getElementById('bpCleanupApplyAllBtn');
+    els.cleanupDismissAllBtn = document.getElementById('bpCleanupDismissAllBtn');
+
+    els.cleanupApplyAllBtn?.addEventListener('click', () => {
+      if (!cleanupSuggestionsCache.length) return;
+      const count = cleanupSuggestionsCache.length;
+      if (!window.confirm(`${count} eşleştirmeyi kaldırmak istediğinize emin misiniz?`)) return;
+      applyCleanupSuggestionIds([], { all: true }).catch((error) => notifyUser(error.message, 'error'));
+    });
+    els.cleanupDismissAllBtn?.addEventListener('click', () => {
+      dismissCleanupSuggestionIds([], { all: true }).catch((error) => notifyUser(error.message, 'error'));
+    });
+    els.cleanupList?.addEventListener('click', (event) => {
+      const applyBtn = event.target.closest('[data-apply-id]');
+      if (applyBtn) {
+        applyCleanupSuggestionIds([applyBtn.getAttribute('data-apply-id')]).catch((error) => notifyUser(error.message, 'error'));
+        return;
+      }
+      const dismissBtn = event.target.closest('[data-dismiss-id]');
+      if (dismissBtn) {
+        dismissCleanupSuggestionIds([dismissBtn.getAttribute('data-dismiss-id')]).catch((error) => notifyUser(error.message, 'error'));
+      }
+    });
 
     document.getElementById('bpModalCancel')?.addEventListener('click', () => closeModal());
     els.modalOverlay?.addEventListener('click', (event) => {
@@ -1290,6 +1835,18 @@
     });
 
     els.body?.addEventListener('change', (event) => {
+      const autoStock = event.target.closest('.bp-auto-stock-check');
+      if (autoStock) {
+        const masterId = autoStock.getAttribute('data-master-id');
+        if (!masterId) return;
+        setMasterAutoStock(masterId, autoStock.checked)
+          .then(() => syncAutoStockSelectAllState())
+          .catch((error) => {
+            autoStock.checked = !autoStock.checked;
+            notifyUser(error.message, 'error');
+          });
+        return;
+      }
       const check = event.target.closest('.bp-row-check');
       if (!check) return;
       const barcode = check.getAttribute('data-barcode');
@@ -1298,6 +1855,7 @@
       else selected.delete(barcode);
       check.closest('tr')?.classList.toggle('is-selected', check.checked);
       syncSelectAllState();
+      updateSelectionToolbar();
     });
 
     els.body?.addEventListener('click', (event) => {
@@ -1319,6 +1877,21 @@
         return;
       }
 
+      const unmapBtn = event.target.closest('[data-unmap-channel]');
+      if (unmapBtn) {
+        const rowBarcode = unmapBtn.closest('tr')?.getAttribute('data-barcode') || '';
+        const productOnly = unmapBtn.hasAttribute('data-unmap-by-product');
+        removeChannelMapping(
+          unmapBtn.getAttribute('data-unmap-channel'),
+          unmapBtn.getAttribute('data-channel-product'),
+          {
+            productName: findRowByBarcode(rowBarcode)?.name,
+            benimposBarcode: productOnly ? '' : (unmapBtn.getAttribute('data-unmap-barcode') || rowBarcode)
+          }
+        ).catch((error) => notifyUser(error.message, 'error'));
+        return;
+      }
+
       const confirmBtn = event.target.closest('[data-confirm-match]');
       if (confirmBtn) {
         const row = findMatchingRow(confirmBtn.getAttribute('data-confirm-match') || '');
@@ -1330,6 +1903,13 @@
       if (searchBtn) {
         const row = findMatchingRow(searchBtn.getAttribute('data-search-master') || '');
         openMasterSearchModal(row).catch((error) => notifyUser(error.message, 'error'));
+        return;
+      }
+
+      const removeBtn = event.target.closest('[data-remove-match]');
+      if (removeBtn) {
+        const row = findMatchingRow(removeBtn.getAttribute('data-remove-match') || '');
+        removeMatchRow(row).catch((error) => notifyUser(error.message, 'error'));
       }
     });
   }
@@ -1347,7 +1927,9 @@
     setFilterPanelMode();
     updateTableHead();
     applyFiltersToControls();
+    loadCleanupSuggestions();
     loadProducts();
+    window.onPanelRefresh = () => loadProducts({ silent: true });
   }
 
   if (document.readyState === 'loading') {

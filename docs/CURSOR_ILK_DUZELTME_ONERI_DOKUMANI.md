@@ -96,7 +96,7 @@ Etkilenecek dosyalar:
 - `lib/db/store.js`
 - `lib/db/sqlite-store.js`
 - `lib/db/parity.js`
-- `scripts/check-db-parity.js`
+- `scripts/maintenance/check-db-parity.js`
 
 Onerilen cozum:
 

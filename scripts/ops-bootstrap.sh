@@ -48,7 +48,7 @@ docker run --rm \
   --env-file "$ROOT/.env" \
   -e OPS_POSTGRES_URL=postgresql://petfix:petfix@127.0.0.1:5433/petfix_ops \
   "$NODE_IMAGE" \
-  node scripts/ops-hub-migrate.js
+  node scripts/migrations/ops-hub-migrate.js
 
 echo "==> seed integrations from .env (optional)"
 docker run --rm \
@@ -58,7 +58,7 @@ docker run --rm \
   --env-file "$ROOT/.env" \
   -e OPS_POSTGRES_URL=postgresql://petfix:petfix@127.0.0.1:5433/petfix_ops \
   "$NODE_IMAGE" \
-  node scripts/ops-hub-seed-integrations.js 2>/dev/null || true
+  node scripts/seed/ops-hub-seed-integrations.js 2>/dev/null || true
 
 echo "==> API stack"
 docker compose --env-file "$COMPOSE_ENV" -f docker-compose.ops-api.yml up -d --build

@@ -666,6 +666,14 @@
 }
 .btn-brown:hover { background: var(--brown-hover); }
 
+.orders-sound-toggle.is-off {
+  background: #6b7280;
+}
+
+.orders-sound-toggle.is-off:hover {
+  background: #4b5563;
+}
+
 .btn-green {
   background: var(--green);
   color: white;
@@ -870,6 +878,22 @@
   color: #6b7280;
 }
 
+.orders-loading-spinner {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  margin-right: 8px;
+  vertical-align: -2px;
+  border: 2px solid #cbd5e1;
+  border-top-color: #5c4033;
+  border-radius: 999px;
+  animation: ordersSpin 0.75s linear infinite;
+}
+
+@keyframes ordersSpin {
+  to { transform: rotate(360deg); }
+}
+
 .orders-error {
   padding: 40px;
   text-align: center;
@@ -1000,6 +1024,31 @@
   font-size: 0.72rem;
   color: #6b7280;
   margin-top: 2px;
+}
+
+.benimpos-terazi-note {
+  color: #047857;
+  font-weight: 600;
+}
+
+.benimpos-barcode-match {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #fffbeb;
+  border: 1px solid #fcd34d;
+}
+
+.benimpos-barcode-match-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #92400e;
+}
+
+.benimpos-barcode-match-name {
+  font-size: 0.75rem;
+  color: #374151;
+  margin: 4px 0 6px;
 }
 
 .benimpos-warn {

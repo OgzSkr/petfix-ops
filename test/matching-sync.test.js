@@ -25,3 +25,10 @@ test('catalogStepsForChannel skips uber orders by default', () => {
     ['master', 'catalog', 'orders', 'auto-match']
   );
 });
+
+test('catalogStepsForChannel skips auto-match when matching disabled', () => {
+  assert.deepEqual(
+    catalogStepsForChannel('yemeksepeti', { matchingEnabled: false }),
+    ['master', 'catalog', 'barcode-link']
+  );
+});

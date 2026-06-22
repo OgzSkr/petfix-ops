@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  extractYemeksepetiOrderItems,
   extractYemeksepetiOrderPayload,
   mapYemeksepetiDeliveryMode,
   mapYemeksepetiOrderStatus,
@@ -15,6 +16,14 @@ import { YS_WEBHOOK_ORDER_FIXTURE } from '../lib/ops-hub/fixtures/yemeksepeti-we
 test('extractYemeksepetiOrderPayload unwraps order envelope', () => {
   const payload = extractYemeksepetiOrderPayload(YS_WEBHOOK_ORDER_FIXTURE);
   assert.equal(payload.order_id, 'ys-wh-9001');
+});
+
+test('extractYemeksepetiOrderItems reads products alias', () => {
+  const items = extractYemeksepetiOrderItems({
+    products: [{ sku: 'A1', name: 'Urun', pricing: { quantity: 1, unit_price: 10 } }]
+  });
+  assert.equal(items.length, 1);
+  assert.equal(items[0].sku, 'A1');
 });
 
 test('mapYemeksepetiOrderStatus maps RECEIVED to received', () => {

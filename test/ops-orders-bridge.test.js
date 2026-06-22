@@ -107,7 +107,7 @@ test('packageFromUberOpsRow builds profit lines from ops_order_lines json', () =
     channel_status: 'Picking',
     ordered_at: '2026-06-10T12:00:00Z',
     ingest_source: 'webhook',
-    raw_payload: { grossAmount: 120 },
+    raw_payload: { source: 'tgo-grocery-packages', grossAmount: 120 },
     lines: [{
       barcode: '8690637037428',
       title: 'Kedi Maması',
@@ -119,7 +119,32 @@ test('packageFromUberOpsRow builds profit lines from ops_order_lines json', () =
   assert.equal(pkg.shipmentPackageId, 'pkg-99');
   assert.equal(pkg.packageGrossAmount, 120);
   assert.equal(pkg.lines.length, 1);
+  assert.equal(pkg.lines[0].lineUnitPrice, 60);
+  assert.equal(pkg.lines[0].lineSalesAmount, 120);
   assert.equal(pkg.lines[0].productName, 'Kedi Maması');
+});
+
+test('packageFromUberOpsRow matches Trendyol Go unit prices for order 11339327359', () => {
+  const pkg = packageFromUberOpsRow({
+    external_id: 'pkg-c426',
+    display_id: '11339327359',
+    channel_status: 'Picking',
+    ordered_at: '2026-06-19T17:14:00Z',
+    ingest_source: 'webhook',
+    raw_payload: { source: 'tgo-grocery-packages', grossAmount: 2505, totalPrice: 2355 },
+    lines: [
+      { barcode: '6927749871088', title: 'Ödül', quantity: 5, unit_price: 131 },
+      { barcode: '5998749130469', title: 'Dreamies', quantity: 2, unit_price: 75 },
+      { barcode: '052742059532', title: 'Hills', quantity: 1, unit_price: 1700 }
+    ]
+  });
+
+  assert.equal(pkg.packageGrossAmount, 2505);
+  assert.equal(pkg.lines[0].lineUnitPrice, 131);
+  assert.equal(pkg.lines[0].lineSalesAmount, 655);
+  assert.equal(pkg.lines[1].lineUnitPrice, 75);
+  assert.equal(pkg.lines[1].lineSalesAmount, 150);
+  assert.equal(pkg.lines[2].lineSalesAmount, 1700);
 });
 
 test('packageFromUberOpsRow prefers raw Trendyol customer name over legacy asterisk mask', () => {
@@ -143,6 +168,37 @@ test('packageFromUberOpsRow prefers raw Trendyol customer name over legacy aster
     }]
   });
   assert.equal(pkg.customerName, 'Merve v.');
+});
+
+test('packageFromUberOpsRow resolves list unit from tgoSourceLines when db unit_price is discounted', () => {
+  const pkg = packageFromUberOpsRow({
+    external_id: 'pkg-ptfx',
+    display_id: '11343529986',
+    channel_status: 'Delivered',
+    ordered_at: '2026-06-21T10:24:00Z',
+    ingest_source: 'webhook',
+    raw_payload: {
+      source: 'tgo-grocery-packages',
+      grossAmount: 1078.89,
+      tgoSourceLines: [{
+        barcode: 'PTFX027',
+        price: 300,
+        amount: 300,
+        items: [{ id: '1' }, { id: '2' }]
+      }]
+    },
+    lines: [{
+      barcode: 'PTFX027',
+      title: 'Somonlu Kısırlaştırılmış Kedi Maması Açık 500 Gr',
+      quantity: 2,
+      unit_price: 150,
+      channel_product_id: 'PTFX027'
+    }]
+  });
+
+  assert.equal(pkg.lines[0].lineUnitPrice, 300);
+  assert.equal(pkg.lines[0].lineSalesAmount, 600);
+  assert.equal(pkg.lines[0].paidLineGross, 300);
 });
 
 test('packageFromUberOpsRow ignores legacy asterisk-masked customer names', () => {

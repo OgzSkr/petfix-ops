@@ -111,7 +111,7 @@ test('buildChannelSaleFromOrder attaches uber financials for settlement orders',
   assert.ok(built.financials);
   assert.equal(built.payload.data.discountRate, built.financials.discountRate);
   assert.equal(built.payload.data.customerCode, undefined);
-  assert.match(built.payload.data.note, /^Trendyol Go #11321986580/);
+  assert.match(built.payload.data.note, /^Uber Eats #11321986580/);
   assert.ok(Math.abs(built.financials.netAmount - 895.93) < 0.01);
 });
 

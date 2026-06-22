@@ -76,24 +76,24 @@ test('matchingQueueActionItems returns actionable cards', () => {
   const queue = {
     totals: { queue: 3, missingMaster: 1, needsReview: 0, autoPendingConfirm: 2 },
     channels: [{
-      channelId: 'trendyol-marketplace',
-      label: 'Trendyol',
+      channelId: 'yemeksepeti',
+      label: 'Yemeksepeti',
       queueTotal: 3,
       missingMaster: 1,
       autoPendingConfirm: 2,
       needsReview: 0,
       readyForSales: false,
       blockers: ['1 otomatik eşleşme manuel onay bekliyor'],
-      href: '/products/inbox?channelId=trendyol-marketplace'
+      href: '/hzlmrktops/urunler?channelId=yemeksepeti'
     }]
   };
   const items = matchingQueueActionItems(queue);
   assert.equal(items.length, 1);
-  assert.equal(items[0].id, 'matching-readiness-trendyol-marketplace');
-  assert.match(items[0].href, /high_confidence/);
+  assert.equal(items[0].id, 'matching-readiness-yemeksepeti');
+  assert.match(items[0].href, /\/hzlmrktops\/urunler/);
 });
 
-test('resolveInboxHref picks dominant queue filter', () => {
+test('resolveInboxHref links to hzlmrktops products page', () => {
   assert.match(
     resolveInboxHref({
       channelId: 'yemeksepeti',
@@ -102,7 +102,7 @@ test('resolveInboxHref picks dominant queue filter', () => {
       needsReview: 418,
       autoPendingConfirm: 10
     }),
-    /manual_review/
+    /\/hzlmrktops\/urunler/
   );
   assert.match(
     resolveInboxHref({
@@ -112,7 +112,7 @@ test('resolveInboxHref picks dominant queue filter', () => {
       needsReview: 5,
       autoPendingConfirm: 3
     }),
-    /missing_master/
+    /\/hzlmrktops\/urunler/
   );
 });
 
@@ -121,24 +121,23 @@ test('channelReadyPercent calculates confirmed ratio', () => {
   assert.equal(channelReadyPercent({ productCount: 0, manualConfirmed: 0 }), 0);
 });
 
-test('catalogChannelOpsConfig exposes MarketNext yemeksepeti only', () => {
+test('catalogChannelOpsConfig exposes HzlMrktOps yemeksepeti only', () => {
   assert.equal(catalogChannelOpsConfig('trendyol-marketplace'), null);
-  assert.equal(catalogChannelOpsConfig('woocommerce'), null);
   assert.ok(catalogChannelOpsConfig('yemeksepeti'));
   assert.equal(catalogChannelOpsConfig('uber-eats'), null);
 });
 
 test('buildCatalogMatchingOpsChecklist marks master and catalog steps', () => {
   const checklist = buildCatalogMatchingOpsChecklist({
-    channelId: 'trendyol-marketplace',
-    channelLabel: 'Trendyol',
-    catalogLabel: 'Trendyol katalog',
+    channelId: 'yemeksepeti',
+    channelLabel: 'Yemeksepeti',
+    catalogLabel: 'Yemeksepeti katalog',
     matchingStatus: {
       masterProductCount: 10,
       masterSyncedAt: '2026-01-01T00:00:00.000Z',
-      trendyolCatalogSyncedAt: '2026-01-02T00:00:00.000Z',
+      yemeksepetiCatalogSyncedAt: '2026-01-02T00:00:00.000Z',
       channelStats: {
-        'trendyol-marketplace': {
+        yemeksepeti: {
           productCount: 5,
           mappingCount: 3,
           byStatus: { manual_confirmed: 2, auto_matched: 1 }

@@ -227,7 +227,15 @@ completePickBtn.addEventListener('click', async () => {
   try {
     const data = await ops.api(`/ops/v1/orders/${currentOrderId}/picking/complete`, { method: 'POST', body: '{}' });
     renderOrder(data);
-    ops.showToast(ops.isShadowMode() ? 'Toplama tamamlandı (eğitim)' : 'Toplama tamamlandı');
+    if (data.autoSale?.salesCode) {
+      ops.showToast(`BenimPOS satışı oluşturuldu: ${data.autoSale.salesCode}`);
+    } else if (data.autoSale?.dryRun) {
+      ops.showToast('Toplama tamamlandı — BenimPOS satışı simüle edildi');
+    } else if (data.autoSale?.autoSaleError) {
+      ops.showToast(`Toplama tamamlandı — otomatik satış: ${data.autoSale.autoSaleError}`);
+    } else {
+      ops.showToast(ops.isShadowMode() ? 'Toplama tamamlandı (eğitim)' : 'Toplama tamamlandı');
+    }
   } catch (error) {
     ops.showToast(error.message);
   }

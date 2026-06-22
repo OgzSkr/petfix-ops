@@ -19,9 +19,12 @@ if [[ $EUID -ne 0 ]]; then
 fi
 
 export DEBIAN_FRONTEND=noninteractive
+# Conffile (dpkg) sorularını otomatik çöz — aksi halde "ct-preset.list (Y/I/N/O/D/Z)"
+# gibi interaktif promptlar deploy'u süresiz bloke eder (broken pipe/timeout).
+APT_OPTS=(-y -qq -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold)
 apt-get update -qq
-apt-get install -y -qq docker.io docker-compose-v2 nginx certbot python3-certbot-nginx curl git ufw rsync || \
-apt-get install -y -qq docker.io nginx certbot python3-certbot-nginx curl git ufw rsync
+apt-get install "${APT_OPTS[@]}" docker.io docker-compose-v2 nginx certbot python3-certbot-nginx curl git ufw rsync || \
+apt-get install "${APT_OPTS[@]}" docker.io nginx certbot python3-certbot-nginx curl git ufw rsync
 
 systemctl enable docker nginx
 systemctl start docker
@@ -58,6 +61,16 @@ cd "$APP_DIR"
 if [[ ! -f "$ENV_FILE" ]]; then
   echo "HATA: $ENV_FILE eksik — cp .env.production.example $ENV_FILE"
   exit 1
+fi
+
+mkdir -p data
+touch data/runtime-secrets.env
+chmod 600 data/runtime-secrets.env 2>/dev/null || true
+# Container petfix uid=100 — data dizini okunabilir olmalı
+chown -R 100:101 data 2>/dev/null || true
+if [[ -x scripts/ensure-buybox-worker.sh ]]; then
+  BUYBOX_WORKER_HOST_DIR="${BUYBOX_WORKER_HOST_DIR:-/opt/petfix/live-buybox-worker}" \
+    bash scripts/ensure-buybox-worker.sh || true
 fi
 
 echo "==> Production Docker stack"

@@ -15,8 +15,14 @@ test('resolveGetirApiConfig maps env-style fields', () => {
   assert.equal(cfg.shopId, 'shop-1');
 });
 
-test('isGetirConfigComplete requires shop, credentials and base URL', () => {
+test('isGetirConfigComplete requires shop and credentials (base URL defaults)', () => {
   assert.equal(isGetirConfigComplete({ shopId: 'x' }), false);
+  assert.equal(isGetirConfigComplete({
+    shopId: '6a310a9818ce7da2135a05c9',
+    apiUsername: 'petfix',
+    apiPassword: 'test',
+    apiEnv: 'prod'
+  }), true);
   assert.equal(isGetirConfigComplete({
     shopId: '6a310a9818ce7da2135a05c9',
     apiUsername: 'petfix',

@@ -5,12 +5,11 @@
 (function initChannelLogos() {
   const VISUALS = {
     benimpos: { label: 'BenimPOS', shortLabel: 'BenimPOS', color: '#1e6fd9', accent: '#fff', icon: 'pos', image: '/assets/channels/benimpos.png', imageFit: 'contain' },
-    'trendyol-marketplace': { label: 'Trendyol Pazaryeri', shortLabel: 'Trendyol', color: '#f27a1a', accent: '#fff', icon: 'trendyol', image: '/assets/channels/trendyol-marketplace.png' },
     'trendyol-go': { label: 'Trendyol Go', shortLabel: 'Trendyol GO', color: '#f27a1a', accent: '#fff', icon: 'tgo', image: '/assets/channels/trendyol-go.png' },
     'uber-eats': { label: 'Trendyol Go', shortLabel: 'TGO', color: '#f27a1a', accent: '#fff', icon: 'tgo', image: '/assets/channels/trendyol-go.png' },
     getir: { label: 'Getir Çarşı', shortLabel: 'Getir', color: '#5d3ebc', accent: '#ffd10d', icon: 'getir', image: '/assets/channels/getir-carsi.png' },
     yemeksepeti: { label: 'Yemeksepeti Mahalle', shortLabel: 'Mahalle', color: '#fa0050', accent: '#fff', icon: 'ys', image: '/assets/channels/yemeksepeti-mahalle.png' },
-    woocommerce: { label: 'WooCommerce', shortLabel: 'Woo', color: '#7f54b3', accent: '#fff', icon: 'woo', image: '/assets/channels/woocommerce.png', imageFit: 'contain' }
+    trendyol_go: { label: 'Trendyol Go', shortLabel: 'TGO', color: '#f27a1a', accent: '#fff', icon: 'tgo', image: '/assets/channels/trendyol-go.png' },
   };
 
   function escAttr(value) {

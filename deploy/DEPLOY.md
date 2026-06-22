@@ -57,3 +57,21 @@ npm run ops:tunnel
 ```
 
 Mac kapalıyken veya tunnel düşünce YS siparişleri gelmez — production için VPS şart.
+
+## BuyBox worker (production)
+
+Trendyol BuyBox polling VPS'te `petfix-prod-buybox-worker` container olarak çalışır (`compose.prod.yml`).
+
+```bash
+# VPS'te
+docker logs -f petfix-prod-buybox-worker --tail 30
+curl -s -H "Authorization: Bearer TOKEN" https://api.petfix.com.tr/api/live-status
+```
+
+`.env.production` içinde `TRENDYOL_*` ve `LIVE_BUYBOX_WEBHOOK_SECRET` gerekli. Yerelde:
+
+```bash
+bash scripts/prepare-env-production.sh   # yerel .env → .env.production
+export VPS_HOST=SUNUCU_IP
+bash scripts/ops-deploy-vps.sh             # worker klasörünü de kopyalar
+```

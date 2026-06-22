@@ -29,7 +29,26 @@ test('buildProductionChannelStatus uses aliased created_at in sync query', async
 });
 
 test('buildProductionChannelStatus returns not_configured without credentials', async () => {
-  const result = await buildProductionChannelStatus(null, { NODE_ENV: 'test' });
-  assert.ok(Array.isArray(result.channels));
-  assert.equal(result.channels.every((row) => row.state === 'not_configured'), true);
+  const keys = [
+    'YEMEKSEPETI_CLIENT_ID',
+    'YEMEKSEPETI_CLIENT_SECRET',
+    'GETIR_API_KEY',
+    'UBER_EATS_API_KEY',
+    'UBER_EATS_API_SECRET',
+    'TRENDYOL_API_KEY'
+  ];
+  const saved = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+  for (const key of keys) {
+    delete process.env[key];
+  }
+  try {
+    const result = await buildProductionChannelStatus(null, { NODE_ENV: 'test' });
+    assert.ok(Array.isArray(result.channels));
+    assert.equal(result.channels.every((row) => row.state === 'not_configured'), true);
+  } finally {
+    for (const key of keys) {
+      if (saved[key] === undefined) delete process.env[key];
+      else process.env[key] = saved[key];
+    }
+  }
 });

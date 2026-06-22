@@ -16,25 +16,42 @@ import {
 import { ensureProductMatching } from '../lib/product-matching/schema.js';
 import { MAPPING_STATUS } from '../lib/product-matching/constants.js';
 
-test('computeGetirOrderFinancials derives commission from gross discount and net charge', () => {
+test('computeGetirOrderFinancials applies rules for discount and commission', () => {
   const financials = computeGetirOrderFinancials({
     rawPayload: {
       totalPrice: 500,
       totalPriceWithPackaging: 500,
-      totalDiscountAmount: 50,
-      totalChargedAmountAfterProvisionOrRefund: 350
+      totalDiscountAmount: 50
     }
   });
 
   assert.equal(financials.grossAmount, 500);
   assert.equal(financials.sellerDiscount, 50);
   assert.equal(financials.discountedBasket, 450);
-  assert.equal(financials.netAmount, 350);
-  assert.ok(financials.discountRate > 29.99 && financials.discountRate < 30.01);
+  assert.equal(financials.netAmount, 386.87);
+  assert.equal(financials.source, 'rules');
   assert.equal(financials.settlementLoaded, true);
 });
 
-test('computeGetirOrderFinancials matches Getir Finansal Hareketler panel row d427', () => {
+test('computeGetirOrderFinancials computes net payout from rules when gross equals customer charge', () => {
+  const financials = computeGetirOrderFinancials({
+    rawPayload: {
+      totalPrice: 1000,
+      totalPriceWithPackaging: 1000,
+      deliveryType: 2,
+      totalChargedAmountAfterProvisionOrRefund: 1000
+    }
+  });
+
+  assert.equal(financials.grossAmount, 1000);
+  assert.ok(financials.orderCommission > 0, 'komisyon hesaplanmalı');
+  assert.ok(financials.withholdingAmount > 0, 'stopaj hesaplanmalı');
+  assert.ok(financials.netAmount < financials.grossAmount, 'işletme alacağı brüt tutardan düşük olmalı');
+  assert.equal(financials.netAmount, 859.72);
+  assert.equal(financials.source, 'rules');
+});
+
+test('computeGetirOrderFinancials matches Getir Finansal Hareketler panel row d427 via rules', () => {
   const financials = computeGetirOrderFinancials({
     rawPayload: {
       totalPrice: 3579,
@@ -69,10 +86,29 @@ test('computeGetirOrderFinancials adds courier fee for Getir delivery', () => {
   assert.equal(financials.discountedBasket, 1000);
   assert.ok(Math.abs(financials.orderCommission - 132) < 0.02);
   assert.ok(Math.abs(financials.courierFee - 144) < 0.02);
+  assert.equal(financials.commissionRate, GETIR_FINANCIAL_RATES.routingCommissionRate);
   assert.equal(financials.courierFeeRate, GETIR_FINANCIAL_RATES.courierFeeRate);
 });
 
-test('computeGetirOrderFinancials extracts bag fee from packagingInfo', () => {
+test('computeGetirOrderFinancials shows rule commission rate on discounted basket', () => {
+  const financials = computeGetirOrderFinancials({
+    rawPayload: {
+      totalPrice: 1071.02,
+      totalPriceWithPackaging: 1072.02,
+      packagingInfo: { totalPackagingPrice: 1 },
+      totalDiscountAmount: 250,
+      deliveryType: 1
+    }
+  });
+
+  assert.equal(financials.discountedBasket, 821.02);
+  assert.equal(financials.commissionRate, 13.2);
+  assert.ok(Math.abs(financials.orderCommission - 108.37) < 0.05);
+  assert.ok(Math.abs(financials.courierFee - 118.23) < 0.05);
+  assert.ok(Math.abs(financials.commissionAmount - financials.orderCommission - financials.courierFee) < 0.02);
+});
+
+test('computeGetirOrderFinancials extracts bag fee and ignores charged amount for net', () => {
   const financials = computeGetirOrderFinancials({
     rawPayload: {
       totalPrice: 2824.5,
@@ -85,34 +121,52 @@ test('computeGetirOrderFinancials extracts bag fee from packagingInfo', () => {
   assert.equal(financials.orderAmount, 2824.5);
   assert.equal(financials.bagFee, 1);
   assert.equal(financials.grossAmount, 2825.5);
-  assert.equal(financials.netAmount, 2725.5);
+  assert.equal(financials.netAmount, 2429.27);
+  assert.equal(financials.source, 'rules');
 });
 
-test('computeGetirOrderFinancials uses portal settlement breakdown when present', () => {
+test('computeGetirOrderFinancials uses rules for r977 with webhook discount', () => {
+  const financials = computeGetirOrderFinancials({
+    rawPayload: {
+      totalPrice: 5601.96,
+      totalPriceWithPackaging: 5603.96,
+      totalDiscountAmount: 100,
+      packagingInfo: { totalPackagingPrice: 2, bagCount: 1 },
+      totalChargedAmountAfterProvisionOrRefund: 5501.96,
+      deliveryType: 2
+    }
+  });
+
+  assert.equal(financials.orderAmount, 5601.96);
+  assert.equal(financials.bagFee, 2);
+  assert.equal(financials.campaignAmount, 100);
+  assert.equal(financials.discountedBasket, 5501.96);
+  assert.equal(financials.orderCommission, 726.26);
+  assert.equal(financials.withholdingAmount, 45.57);
+  assert.equal(financials.netAmount, 4732.13);
+  assert.notEqual(financials.netAmount, 5501.96);
+});
+
+test('computeGetirOrderFinancials ignores portal settlement breakdown in payload', () => {
   const financials = computeGetirOrderFinancials({
     rawPayload: {
       totalPrice: 500,
       totalPriceWithPackaging: 501,
+      packagingInfo: { totalPackagingPrice: 1 },
       financialMovement: {
         orderAmount: 500,
         bagAmount: 1,
         merchantCampaignAmount: 50,
         orderCompletionCommission: 80,
         courierServiceFee: 15,
-        fixedDistributionAmount: 5,
-        withholdingTaxRate: 1,
-        withholdingTaxAmount: 4.2,
         merchantReceivable: 420.8
       }
     }
   });
 
-  assert.equal(financials.campaignAmount, 50);
-  assert.equal(financials.orderCommission, 80);
-  assert.equal(financials.courierFee, 15);
-  assert.equal(financials.withholdingAmount, 4.2);
-  assert.equal(financials.netAmount, 420.8);
-  assert.equal(financials.source, 'portal');
+  assert.equal(financials.source, 'rules');
+  assert.notEqual(financials.netAmount, 420.8);
+  assert.equal(financials.netAmount, 430.86);
 });
 
 test('applyGetirBenimposFinancials sets discountRate and note on payload', () => {
@@ -126,15 +180,14 @@ test('applyGetirBenimposFinancials sets discountRate and note on payload', () =>
     rawPayload: {
       totalPrice: 500,
       totalPriceWithPackaging: 500,
-      totalDiscountAmount: 50,
-      totalChargedAmountAfterProvisionOrRefund: 350
+      totalDiscountAmount: 50
     }
   };
 
   const { payload: adjusted, financials } = applyGetirBenimposFinancials(payload, orderPackage);
   assert.ok(adjusted.data.discountRate > 0);
-  assert.match(adjusted.data.note, /Net: 350,00 TL/);
-  assert.equal(financials.netAmount, 350);
+  assert.match(adjusted.data.note, /Net: 386,87 TL/);
+  assert.equal(financials.netAmount, 386.87);
 });
 
 test('summarizeGetirOrderFinancials uses precomputed getirFinancials when present', () => {
@@ -184,8 +237,7 @@ test('buildChannelSaleFromOrder attaches getir financials', () => {
     rawPayload: {
       totalPrice: 500,
       totalPriceWithPackaging: 500,
-      totalDiscountAmount: 50,
-      totalChargedAmountAfterProvisionOrRefund: 350
+      totalDiscountAmount: 50
     },
     lines: [{
       barcode,
@@ -199,5 +251,34 @@ test('buildChannelSaleFromOrder attaches getir financials', () => {
   assert.ok(built.financials);
   assert.equal(built.payload.data.discountRate, built.financials.discountRate);
   assert.match(built.payload.data.note, /^Getir #G12345/);
-  assert.equal(built.financials.netAmount, 350);
+  assert.equal(built.financials.netAmount, 386.87);
+});
+
+test('extractGetirCampaignAmount reads totalDiscountAmount from webhook payload', () => {
+  assert.equal(extractGetirCampaignAmount({ totalDiscountAmount: 100 }), 100);
+});
+
+test('analyzeOrderPackages keeps Getir rule financials on order rows', async () => {
+  const { analyzeOrderPackages } = await import('../lib/order-profitability.js');
+  const {
+    computeGetirOrderFinancials,
+    applyGetirFinancialsToPackage
+  } = await import('../lib/channels/getir-portal-financials.js');
+
+  const pkg = applyGetirFinancialsToPackage({
+    channel: 'getir',
+    orderNumber: 'G-100',
+    orderDate: '2026-06-18T12:00:00.000Z',
+    status: 'completed',
+    lines: [{ barcode: '869000000001', productName: 'Test', quantity: 1, lineUnitPrice: 500 }]
+  }, computeGetirOrderFinancials({
+    rawPayload: { totalPrice: 500, totalPriceWithPackaging: 500 },
+    packageGrossAmount: 500
+  }));
+
+  const rows = analyzeOrderPackages([pkg], { products: [] }, { channelId: 'getir' });
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].portalFinancials?.loaded, true);
+  assert.equal(rows[0].portalFinancials?.source, 'rules');
+  assert.ok(rows[0].getirFinancials?.netAmount > 0);
 });

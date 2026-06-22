@@ -1,0 +1,79 @@
+/**
+ * PetFix toggle — kompakt ON/OFF (yeşil / kırmızı), tik işareti yerine.
+ */
+:root {
+  --pf-switch-off: #e86b6b;
+  --pf-switch-on: #5ec85e;
+  --pf-switch-knob: #fff;
+  --pf-switch-w: 38px;
+  --pf-switch-h: 20px;
+  --pf-switch-pad: 2px;
+  --pf-switch-knob-size: calc(var(--pf-switch-h) - var(--pf-switch-pad) * 2);
+  --pf-switch-travel: calc(var(--pf-switch-w) - var(--pf-switch-knob-size) - var(--pf-switch-pad) * 2);
+}
+
+input[type="checkbox"]:not(.pf-checkbox) {
+  -webkit-appearance: none;
+  appearance: none;
+  position: relative;
+  flex-shrink: 0;
+  width: var(--pf-switch-w);
+  height: var(--pf-switch-h);
+  margin: 0;
+  border: 0;
+  border-radius: 999px;
+  background: var(--pf-switch-off);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.22);
+  cursor: pointer;
+  vertical-align: middle;
+  transition: background 0.16s ease, box-shadow 0.16s ease;
+}
+
+input[type="checkbox"]:not(.pf-checkbox)::after {
+  content: "";
+  position: absolute;
+  top: var(--pf-switch-pad);
+  left: var(--pf-switch-pad);
+  width: var(--pf-switch-knob-size);
+  height: var(--pf-switch-knob-size);
+  border-radius: 50%;
+  background: var(--pf-switch-knob);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.2);
+  transition: transform 0.16s ease;
+}
+
+input[type="checkbox"]:not(.pf-checkbox):checked {
+  background: var(--pf-switch-on);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.28);
+}
+
+input[type="checkbox"]:not(.pf-checkbox):checked::after {
+  transform: translateX(var(--pf-switch-travel));
+}
+
+input[type="checkbox"]:not(.pf-checkbox):focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+}
+
+input[type="checkbox"]:not(.pf-checkbox):disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+/* Tablo hücreleri */
+.bp-col-check input[type="checkbox"],
+.bp-col-auto-stock input[type="checkbox"],
+#bpAutoStockSelectAll {
+  --pf-switch-w: 32px;
+  --pf-switch-h: 18px;
+  --pf-switch-pad: 2px;
+}
+
+/* Filtre satırları — bir tık daha küçük */
+.catalog-filter--check input[type="checkbox"],
+.tariff-check-inline input[type="checkbox"],
+.filter-toggle input[type="checkbox"] {
+  --pf-switch-w: 34px;
+  --pf-switch-h: 18px;
+}

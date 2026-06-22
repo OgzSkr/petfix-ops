@@ -15,7 +15,8 @@ import { productPoolUrlForMappingStatus } from '../lib/product-matching/pool-url
 import { orderDetailPageUrl } from '../lib/platform/orders-url.js';
 import { ensureProductMatching } from '../lib/product-matching/schema.js';
 import { MATCH_METHOD } from '../lib/product-matching/mapping-types.js';
-import { parseChannelNameHints } from '../lib/product-matching/normalize.js';
+import { parseChannelNameHints, barcodesEquivalent } from '../lib/product-matching/normalize.js';
+import { mapGetirCatalogProduct } from '../lib/product-matching/channel-ingest/getir.js';
 
 function makeDb() {
   const db = {};
@@ -26,7 +27,7 @@ function makeDb() {
 test('resolveChannelLine legacy mode uses channel barcode', () => {
   const db = makeDb();
   const result = resolveChannelLine(db, {
-    channelId: 'trendyol-marketplace',
+    channelId: 'getir',
     channelBarcode: '8690001112223',
     mode: 'legacy'
   });
@@ -52,7 +53,7 @@ test('resolveChannelLine hybrid falls back when mapping missing', () => {
 test('resolveChannelLine strict blocks unmapped lines', () => {
   const db = makeDb();
   const result = resolveChannelLine(db, {
-    channelId: 'trendyol-marketplace',
+    channelId: 'getir',
     channelBarcode: '8690001112223',
     mode: 'strict'
   });
@@ -72,7 +73,7 @@ test('resolveChannelLine uses confirmed mapping master barcode', () => {
   });
   db.productMatching.mappings.push({
     id: 'map-trendyol-8690001112223',
-    channelId: 'trendyol-marketplace',
+    channelId: 'getir',
     channelProductId: '8690001112223',
     channelBarcode: '8690001112223',
     masterProductId: 'mp-8690001112223',
@@ -81,7 +82,7 @@ test('resolveChannelLine uses confirmed mapping master barcode', () => {
   });
 
   const result = resolveChannelLine(db, {
-    channelId: 'trendyol-marketplace',
+    channelId: 'getir',
     channelBarcode: '8690001112223',
     mode: 'hybrid'
   });
@@ -105,6 +106,66 @@ test('proposeMatchForChannelProduct auto-matches exact barcode', () => {
 
   assert.equal(proposal.status, MAPPING_STATUS.AUTO_MATCHED);
   assert.equal(proposal.masterProductId, 'mp-8690001112223');
+});
+
+test('mapGetirCatalogProduct keeps all defined barcodes', () => {
+  const mapped = mapGetirCatalogProduct({
+    menuProductId: 'GTR-1',
+    productName: { tr: 'Royal Canin Anne ve Bebek Kedi Maması (400 g)' },
+    barcodes: ['3182550707305', '8690000000001', '3182550707305'],
+    price: 350
+  });
+
+  assert.deepEqual(mapped.channelBarcodes, ['3182550707305', '8690000000001']);
+  assert.equal(mapped.channelBarcode, '8690000000001');
+});
+
+test('mapGetirCatalogProduct collects barcodes from alternate Getir API fields', () => {
+  const mapped = mapGetirCatalogProduct({
+    catalogProductId: '17583053-1f6e-4078-baea-0ee1bdc2a84c',
+    productName: { tr: 'Garden Mix Kemirgen Talaşı (15 L)' },
+    barcodeNo: '681085424374',
+    barcodes: ['8681085424374'],
+    price: 130
+  });
+
+  assert.deepEqual([...mapped.channelBarcodes].sort(), ['681085424374', '8681085424374'].sort());
+  assert.equal(mapped.channelBarcode, '8681085424374');
+});
+
+test('mapGetirCatalogProduct matches BenimPOS via secondary barcode in list', () => {
+  const masters = [{
+    id: 'mp-8681085424374',
+    benimposBarcode: '8681085424374',
+    name: 'GARDENMİX KEMİRGEN TALAŞI'
+  }];
+  const mapped = mapGetirCatalogProduct({
+    catalogProductId: '17583053-1f6e-4078-baea-0ee1bdc2a84c',
+    productName: { tr: 'Garden Mix Kemirgen Talaşı (15 L)' },
+    barcodes: ['681085424374', '8681085424374'],
+    price: 130
+  });
+  const proposal = proposeMatchForChannelProduct(mapped, masters);
+
+  assert.equal(proposal.status, MAPPING_STATUS.AUTO_MATCHED);
+  assert.equal(proposal.masterProductId, 'mp-8681085424374');
+});
+
+test('proposeMatchForChannelProduct matches via a secondary barcode', () => {
+  const masters = [{
+    id: 'mp-8690000000001',
+    benimposBarcode: '8690000000001',
+    name: 'Royal Canin Anne ve Bebek Kedi Maması 400g'
+  }];
+  const proposal = proposeMatchForChannelProduct({
+    channelId: 'getir',
+    channelBarcode: '3182550707305',
+    channelBarcodes: ['3182550707305', '8690000000001'],
+    channelName: 'Royal Canin Anne ve Bebek Kedi Maması (400 g)'
+  }, masters);
+
+  assert.equal(proposal.status, MAPPING_STATUS.AUTO_MATCHED);
+  assert.equal(proposal.masterProductId, 'mp-8690000000001');
 });
 
 test('proposeMatchForChannelProduct reports missing master', () => {
@@ -131,34 +192,32 @@ test('proposeMatchForChannelProduct auto-matches when barcode matches despite ti
   assert.ok(proposal.reasons.includes('isim_uyusmazligi') || proposal.reasons.includes('gramaj_farkli'));
 });
 
-test('productPoolUrlForMappingStatus opens map modal for unmapped barcode', () => {
+test('productPoolUrlForMappingStatus links to hzlmrktops products with barcode search', () => {
   const url = productPoolUrlForMappingStatus('uber-eats', '8690001112223', 'missing_master');
-  assert.match(url, /\/marketnext\/matching\/inbox/);
-  assert.match(url, /queueMode=missing_master/);
+  assert.match(url, /\/hzlmrktops\/urunler/);
   assert.match(url, /q=8690001112223/);
 });
 
-test('productPoolUrlForMappingStatus opens channel tab for pending mapping', () => {
+test('productPoolUrlForMappingStatus uses barcode for pending mapping', () => {
   const url = productPoolUrlForMappingStatus('uber-eats', '3182550707312', 'pending');
-  assert.match(url, /tab=uber-eats/);
-  assert.match(url, /openMap=1/);
+  assert.match(url, /\/hzlmrktops\/urunler/);
   assert.match(url, /q=3182550707312/);
 });
 
 test('orderDetailPageUrl deep links to channel order detail', () => {
   assert.equal(
-    orderDetailPageUrl('trendyol-marketplace', '11269278264', { days: 1 }),
-    '/marketplace/orders?order=11269278264&days=1'
+    orderDetailPageUrl('getir', '11269278264', { days: 1 }),
+    '/hzlmrktops/siparisler?order=11269278264&days=1'
   );
-  assert.match(orderDetailPageUrl('uber-eats', '998877'), /^\/marketnext\/orders\/uber-eats\?order=998877/);
+  assert.match(orderDetailPageUrl('uber-eats', '998877'), /^\/hzlmrktops\/siparisler\?order=998877/);
 });
 
-test('findMappingForChannelLine resolves WooCommerce SKU via order barcode', () => {
+test('findMappingForChannelLine resolves channel SKU via order barcode', () => {
   const db = makeDb();
   db.productMatching.channelProducts.push({
-    id: 'cp-woocommerce-WOO-SKU-1',
-    channelId: 'woocommerce',
-    channelProductId: 'WOO-SKU-1',
+    id: 'cp-yemeksepeti-YS-SKU-1',
+    channelId: 'yemeksepeti',
+    channelProductId: 'YS-SKU-1',
     channelBarcode: '8690001112223',
     channelName: 'Test Ürün'
   });
@@ -169,23 +228,23 @@ test('findMappingForChannelLine resolves WooCommerce SKU via order barcode', () 
     buyingPrice: 100
   });
   db.productMatching.mappings.push({
-    id: 'map-woo-WOO-SKU-1',
-    channelId: 'woocommerce',
-    channelProductId: 'WOO-SKU-1',
+    id: 'map-ys-YS-SKU-1',
+    channelId: 'yemeksepeti',
+    channelProductId: 'YS-SKU-1',
     channelBarcode: '8690001112223',
     masterProductId: 'mp-8690001112223',
     status: MAPPING_STATUS.MANUAL_CONFIRMED,
     matchMethod: 'manual'
   });
 
-  const mapping = findMappingForChannelLine(db, 'woocommerce', '8690001112223');
-  assert.equal(mapping?.channelProductId, 'WOO-SKU-1');
+  const mapping = findMappingForChannelLine(db, 'yemeksepeti', '8690001112223');
+  assert.equal(mapping?.channelProductId, 'YS-SKU-1');
 
-  const resolved = resolveMappingForChannelLine(db, 'woocommerce', '8690001112223');
+  const resolved = resolveMappingForChannelLine(db, 'yemeksepeti', '8690001112223');
   assert.equal(resolved?.master?.name, 'Test Ürün');
 
   const line = resolveChannelLine(db, {
-    channelId: 'woocommerce',
+    channelId: 'yemeksepeti',
     channelBarcode: '8690001112223',
     mode: 'hybrid'
   });
@@ -220,7 +279,7 @@ test('resolveMatchingModeForChannel uses channel override', () => {
     'uber-eats': 'strict'
   });
   assert.equal(mode, 'strict');
-  assert.equal(resolveMatchingModeForChannel('hybrid', 'trendyol-marketplace', {
+  assert.equal(resolveMatchingModeForChannel('hybrid', 'getir', {
     'uber-eats': 'strict'
   }), 'hybrid');
 });
@@ -287,17 +346,17 @@ test('findMappingForChannelLine resolves uber mapping for order barcode', () => 
   assert.equal(db.productMatching.mappings.length, 0);
 });
 
-test('buildChannelLookupIndexes finds WooCommerce mapping by SKU', () => {
+test('buildChannelLookupIndexes finds mapping by SKU', () => {
   const db = makeDb();
   db.productMatching.channelProducts.push({
-    channelId: 'woocommerce',
+    channelId: 'yemeksepeti',
     channelProductId: 'SKU-ABC',
     channelBarcode: '8690001112223',
     channelName: 'Royal Canin 2kg'
   });
   db.productMatching.mappings.push({
     id: 'map-wc-sku',
-    channelId: 'woocommerce',
+    channelId: 'yemeksepeti',
     channelProductId: 'SKU-ABC',
     channelBarcode: '8690001112223',
     masterProductId: 'mp-1',
@@ -305,10 +364,31 @@ test('buildChannelLookupIndexes finds WooCommerce mapping by SKU', () => {
     matchMethod: 'manual'
   });
 
-  const indexes = buildChannelLookupIndexes(db, 'woocommerce');
-  const bySku = findMappingForChannelLine(db, 'woocommerce', 'SKU-ABC', indexes);
+  const indexes = buildChannelLookupIndexes(db, 'yemeksepeti');
+  const bySku = findMappingForChannelLine(db, 'yemeksepeti', 'SKU-ABC', indexes);
   assert.equal(bySku?.channelProductId, 'SKU-ABC');
-  assert.equal(findChannelProductForLine(db, 'woocommerce', 'SKU-ABC', indexes)?.channelProductId, 'SKU-ABC');
+  assert.equal(findChannelProductForLine(db, 'yemeksepeti', 'SKU-ABC', indexes)?.channelProductId, 'SKU-ABC');
+});
+
+test('findChannelProductForLine resolves order line by a secondary barcode', () => {
+  const db = makeDb();
+  db.productMatching.channelProducts.push({
+    channelId: 'getir',
+    channelProductId: 'GTR-1',
+    channelBarcode: '3182550707305',
+    channelBarcodes: ['3182550707305', '8690000000001'],
+    channelName: 'Royal Canin Anne ve Bebek Kedi Maması (400 g)'
+  });
+
+  const indexes = buildChannelLookupIndexes(db, 'getir');
+  assert.equal(
+    findChannelProductForLine(db, 'getir', '8690000000001', indexes)?.channelProductId,
+    'GTR-1'
+  );
+  assert.equal(
+    findChannelProductForLine(db, 'getir', '8690000000001')?.channelProductId,
+    'GTR-1'
+  );
 });
 
 test('proposeFuzzyMatchForChannelProduct suggests pending match by name', () => {
@@ -331,6 +411,26 @@ test('proposeFuzzyMatchForChannelProduct suggests pending match by name', () => 
   assert.equal(fuzzy.masterProductId, 'mp-1');
 });
 
+test('runAutoMatchForChannel skips fuzzy proposals by default', () => {
+  const db = makeDb();
+  db.productMatching.masterProducts.push({
+    id: 'mp-1',
+    name: 'Pro Plan Yetişkin Kedi 3kg',
+    benimposBarcode: '8690009998887'
+  });
+  db.productMatching.channelProducts.push({
+    channelId: 'getir',
+    channelProductId: 'getir-fuzzy-1',
+    channelBarcode: '000-no-master',
+    channelName: 'Pro Plan Yetiskin Kedi 3 kg'
+  });
+
+  const summary = runAutoMatchForChannel(db, 'getir');
+  assert.equal(summary.fuzzyProposed, 0);
+  assert.equal(summary.pending, 0);
+  assert.equal(summary.missingMaster, 1);
+});
+
 test('runAutoMatchForChannel creates fuzzy proposals when barcode missing', () => {
   const db = makeDb();
   db.productMatching.masterProducts.push({
@@ -339,17 +439,17 @@ test('runAutoMatchForChannel creates fuzzy proposals when barcode missing', () =
     benimposBarcode: '8690009998887'
   });
   db.productMatching.channelProducts.push({
-    channelId: 'woocommerce',
-    channelProductId: 'wc-fuzzy-1',
+    channelId: 'yemeksepeti',
+    channelProductId: 'ys-fuzzy-1',
     channelBarcode: '000-no-master',
     channelName: 'Pro Plan Yetiskin Kedi 3 kg'
   });
 
-  const summary = runAutoMatchForChannel(db, 'woocommerce');
+  const summary = runAutoMatchForChannel(db, 'yemeksepeti', { allowFuzzy: true });
   assert.equal(summary.fuzzyProposed, 1);
   assert.equal(summary.pending, 1);
 
-  const mapping = db.productMatching.mappings.find((m) => m.channelProductId === 'wc-fuzzy-1');
+  const mapping = db.productMatching.mappings.find((m) => m.channelProductId === 'ys-fuzzy-1');
   assert.equal(mapping.status, MAPPING_STATUS.PENDING);
   assert.equal(mapping.matchMethod, MATCH_METHOD.AUTO_FUZZY);
 });

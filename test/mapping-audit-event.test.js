@@ -40,15 +40,15 @@ test('appendMappingLog stores normalized audit fields', () => {
   appendMappingLog(db, {
     action: 'confirm',
     actor: 'panel',
-    channelId: 'woocommerce',
-    channelProductId: 'wc-99',
+    channelId: 'yemeksepeti',
+    channelProductId: 'ys-99',
     masterProductId: 'mp-99'
   });
 
   const entry = db.productMatching.mappingLogs[0];
   assert.equal(entry.action, 'confirm');
   assert.equal(entry.actor, 'panel');
-  assert.equal(entry.channelId, 'woocommerce');
-  assert.equal(entry.channelProductId, 'wc-99');
+  assert.equal(entry.channelId, 'yemeksepeti');
+  assert.equal(entry.channelProductId, 'ys-99');
   assert.equal(entry.masterProductId, 'mp-99');
 });

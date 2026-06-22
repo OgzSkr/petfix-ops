@@ -41,6 +41,7 @@ services:
       PETFIX_ENV_FILE: .env.production
       HOST: 0.0.0.0
       PORT: 8787
+      NODE_OPTIONS: --max-old-space-size=1536
       # OPS_POSTGRES_URL — env_file'dan gelir; ${POSTGRES_PASSWORD} interpolation $ içeren secret'ları bozar
     ports:
       - '127.0.0.1:8787:8787'

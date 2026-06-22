@@ -71,10 +71,37 @@ test('normalizeOpsOrderInput masks customer PII and validates lines', () => {
   );
 
   assert.equal(result.ok, true);
-  assert.match(result.order.customerMasked.name, /\*/);
-  assert.notEqual(result.order.customerMasked.name, 'Ahmet Yilmaz');
+  assert.equal(result.order.customerMasked.name, 'Ahmet Yilmaz');
+  assert.match(result.order.customerMasked.phone, /\*/);
+  assert.notEqual(result.order.customerMasked.phone, '5321234567');
   assert.equal(result.order.shadowMode, true);
   assert.equal(result.order.lines[0].quantity, 2);
+});
+
+test('normalizeOpsOrderInput preserves channel-pre-masked customer names', () => {
+  const result = normalizeOpsOrderInput(
+    {
+      channel: 'trendyol_go',
+      externalId: 'pkg-456',
+      branchId: 'branch-1',
+      customer: {
+        name: 'Arzu v.',
+        phone: '5321234567'
+      },
+      lines: [
+        {
+          channelProductId: 'sku-1',
+          quantity: 1,
+          barcode: '8690001112223',
+          matchingStatus: 'matched'
+        }
+      ]
+    },
+    { shadowModeDefault: true }
+  );
+
+  assert.equal(result.ok, true);
+  assert.equal(result.order.customerMasked.name, 'Arzu v.');
 });
 
 test('buildOpsOrderIdempotencyKey is channel scoped', () => {
@@ -94,6 +121,14 @@ test('maskCustomerPayload leaves non-PII fields intact', () => {
   });
   assert.equal(masked.orderCount, 3);
   assert.equal(masked.meta.city, 'Istanbul');
+});
+
+test('maskCustomerPayload preserves channel customer names and masks phone', () => {
+  for (const name of ['Arzu v.', 'Berna b.', 'Ahmet Yilmaz', 'Kübra']) {
+    const masked = maskCustomerPayload({ name, phone: '5321234567' });
+    assert.equal(masked.name, name);
+    assert.match(masked.phone, /\*/);
+  }
 });
 
 test('initial migration defines core ops tables', async () => {

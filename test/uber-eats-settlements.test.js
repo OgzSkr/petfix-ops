@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { settlementsToOrderPackages } from '../lib/channels/uber-eats-orders.js';
+import {
+  settlementsToOrderPackages,
+  buildOrderProvisionIndex,
+  applyOrderProvisions,
+  buildSettlementPackageForOrder
+} from '../lib/channels/uber-eats-orders.js';
 import { analyzeOrderPackages, buildChannelProductTitleByBarcode, buildProductTitleByBarcode } from '../lib/order-profitability.js';
 import { ensureProductMatching } from '../lib/product-matching/schema.js';
 
@@ -38,6 +43,100 @@ test('settlementsToOrderPackages splits stacked discounts per sale line', () => 
   assert.equal(pkg.lines[0].lineGrossAmount, 750);
   assert.equal(pkg.lines[0].lineSellerDiscount, 75);
   assert.ok(Math.abs(pkg.lines[0].commissionAmount - 195.96) < 0.1);
+});
+
+test('buildOrderProvisionIndex nets negative and positive provision rows', () => {
+  const index = buildOrderProvisionIndex(
+    [{ orderNumber: '11324593366', debt: 1 }],
+    [{ orderNumber: '11324593366', credit: 0.25 }]
+  );
+  assert.equal(index.get('11324593366'), 0.75);
+});
+
+test('buildSettlementPackageForOrder builds portal financials for single order', () => {
+  const orderNumber = '11324593366';
+  const pkg = buildSettlementPackageForOrder({
+    sales: [{
+      orderNumber,
+      barcode: '3182550702423',
+      credit: 1550,
+      commissionRate: 23.75,
+      commissionAmount: 368.13,
+      sellerRevenue: 1181.87,
+      description: 'Satış',
+      transactionDate: 1
+    }],
+    discounts: [{
+      orderNumber,
+      barcode: '3182550702423',
+      debt: 150,
+      commissionAmount: 35.63,
+      sellerRevenue: 114.37
+    }],
+    returns: [],
+    provisionNegative: [],
+    provisionPositive: [{
+      orderNumber,
+      barcode: '3182550702423',
+      credit: 1,
+      commissionAmount: 0.24,
+      sellerRevenue: 0.76
+    }]
+  }, orderNumber);
+
+  assert.ok(pkg);
+  assert.ok(pkg.portalFinancials?.loaded);
+  assert.equal(pkg.portalFinancials.price, 1550);
+  assert.equal(pkg.portalFinancials.discount, 150);
+  assert.ok(Math.abs(pkg.portalFinancials.commission - 332.74) < 0.01);
+  assert.equal(pkg.portalFinancials.provision, 1);
+  assert.ok(Math.abs(pkg.portalFinancials.netEarning - 1068.26) < 0.01);
+});
+
+test('applyOrderProvisions legacy helper still attaches packageProvisionAmount', () => {
+  const packages = applyOrderProvisions(
+    settlementsToOrderPackages([{
+      orderNumber: '11324593366',
+      barcode: '8690000000001',
+      credit: 1550,
+      commissionAmount: 332.74,
+      description: 'Satış',
+      transactionDate: 1
+    }], []),
+    new Map([['11324593366', 1]])
+  );
+
+  assert.equal(packages[0].packageProvisionAmount, 1);
+  assert.equal(packages[0].packageProvisionNet, 1);
+});
+
+test('settlementsToOrderPackages keeps portal commission separate from discount commission', () => {
+  const orderNumber = '11324593366';
+  const packages = settlementsToOrderPackages(
+    [{
+      orderNumber,
+      barcode: '3182550702423',
+      credit: 1550,
+      commissionRate: 23.75,
+      commissionAmount: 368.13,
+      sellerRevenue: 1181.87,
+      description: 'Satış',
+      transactionDate: 1
+    }],
+    [{
+      orderNumber,
+      barcode: '3182550702423',
+      debt: 150,
+      commissionAmount: 35.63,
+      sellerRevenue: 114.37
+    }]
+  );
+
+  const pkg = packages[0];
+  assert.ok(Math.abs(pkg.packageSaleCommissionAmount - 368.13) < 0.01);
+  assert.ok(Math.abs(pkg.packagePortalCommissionAmount - 332.5) < 0.01);
+  assert.ok(Math.abs(pkg.packageCommissionAmount - 403.76) < 0.01);
+  assert.equal(pkg.packageDiscountSellerRevenue, 114.37);
 });
 
 test('analyzeOrderPackages replaces generic Satış line names from catalog/master', () => {

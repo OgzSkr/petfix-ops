@@ -7,7 +7,7 @@ Canlı Uber / Getir / Yemeksepeti sipariş hattı için **deploy öncesi zorunlu
 ```bash
 npm run check
 npm test
-node scripts/verify-migration-006.js
+node scripts/migrations/verify-migration-006.js
 npm run smoke   # sunucu çalışıyor olmalı
 ```
 
@@ -47,8 +47,8 @@ Otomatik: uygulama bootstrap sırasında `applyOpsMigrations` çalışır.
 Manuel doğrulama:
 
 ```bash
-node scripts/ops-hub-migrate.js
-node scripts/verify-migration-006.js
+node scripts/migrations/ops-hub-migrate.js
+node scripts/migrations/verify-migration-006.js
 ```
 
 Beklenen: ikinci çalıştırmada yeni migration uygulanmaz (`secondRunApplied: []`).

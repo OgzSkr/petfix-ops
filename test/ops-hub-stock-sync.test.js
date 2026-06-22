@@ -78,6 +78,14 @@ test('buildStockSyncPlan computes TGO drift from catalogQuantity', () => {
   assert.equal(plan.capability.livePush, true);
 });
 
+test('buildStockSyncPlan skips masters opted out of auto stock', () => {
+  const db = sampleDb();
+  db.productMatching.masterProducts[0].autoStockSync = false;
+  const plan = buildStockSyncPlan(db, 'trendyol_go', { autoStockEligibleOnly: true });
+  assert.equal(plan.items.length, 0);
+  assert.equal(plan.skipped.autoStockDisabled, 1);
+});
+
 test('buildStockSyncPlan builds YS push rows without channel quantity', () => {
   const plan = buildStockSyncPlan(sampleDb(), 'yemeksepeti');
   assert.equal(plan.items.length, 1);
@@ -182,6 +190,7 @@ test('isStockPushEnabled reads env flag', () => {
   assert.equal(isStockPushEnabled({ FF_STOCK_PUSH: 'true' }), true);
 });
 
-test('STOCK_CHANNEL_CAPABILITIES documents getir blocked', () => {
-  assert.equal(STOCK_CHANNEL_CAPABILITIES.getir.livePush, false);
+test('STOCK_CHANNEL_CAPABILITIES enables getir live push', () => {
+  assert.equal(STOCK_CHANNEL_CAPABILITIES.getir.livePush, true);
+  assert.equal(STOCK_CHANNEL_CAPABILITIES.getir.driftSource, 'catalogQuantity');
 });

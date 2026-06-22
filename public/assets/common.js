@@ -27,14 +27,15 @@ window.BuyBoxCommon = {
   },
 
   async authFetch(url, options = {}) {
+    const common = window.BuyBoxCommon;
     const response = await fetch(url, {
       ...options,
-      headers: { ...this.apiHeaders(options.body !== undefined), ...(options.headers || {}) }
+      headers: { ...common.apiHeaders(options.body !== undefined), ...(options.headers || {}) }
     });
 
     if (response.status === 401) {
-      sessionStorage.removeItem(this.TOKEN_KEY);
-      this.redirectToLogin();
+      sessionStorage.removeItem(common.TOKEN_KEY);
+      common.redirectToLogin();
       throw new Error('Oturum süresi doldu veya yetkisiz erişim.');
     }
 

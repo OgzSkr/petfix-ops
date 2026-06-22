@@ -1,0 +1,1211 @@
+/**
+ * Legacy sayfalar (styles.css, orders.css) ile yeni panel kabuğu arasında köprü.
+ * Tüm HzlMrktOps içeriği tek kurumsal dilde görünsün.
+ */
+
+.pf-content {
+  --bg: var(--pf-bg-app);
+  --bg-subtle: var(--pf-bg-muted);
+  --surface: var(--pf-bg-surface);
+  --border: var(--pf-border);
+  --border-soft: var(--pf-border);
+  --text: var(--pf-text-primary);
+  --text-secondary: var(--pf-text-secondary);
+  --muted: var(--pf-text-secondary);
+  --brand: var(--pf-brand-primary);
+  --accent: var(--pf-brand-accent);
+  --accent-hover: var(--pf-brand-accent-strong);
+  --accent-soft: rgba(197, 148, 52, 0.1);
+  --radius: var(--pf-radius-md);
+  --radius-sm: var(--pf-radius-sm);
+  --shadow-sm: var(--pf-shadow-sm);
+  --shadow: var(--pf-shadow-md);
+}
+
+/* ── Siparişler ── */
+body.pf-body.orders-page {
+  background: var(--pf-bg-app);
+}
+
+.pf-content .orders-page,
+.pf-content.ops-orders-page {
+  --coral: var(--pf-brand-accent);
+  --coral-dark: var(--pf-brand-accent-strong);
+  --brown: var(--pf-brand-primary);
+  --brown-hover: var(--pf-brand-primary-soft);
+  min-height: auto;
+  background: transparent;
+}
+
+.pf-content .orders-wrap,
+.pf-content .pf-ops-orders {
+  max-width: none;
+  padding: 0;
+  display: grid;
+  gap: 16px;
+}
+
+.pf-content .channel-orders-intro.panel,
+.pf-content .orders-intro.panel {
+  margin: 0;
+  padding: 18px 20px;
+  border-radius: var(--pf-radius-md);
+  border: 1px solid var(--pf-border);
+  background: var(--pf-bg-surface);
+  box-shadow: var(--pf-shadow-sm);
+}
+
+.pf-content .channel-orders-intro h2,
+.pf-content .orders-intro h2 {
+  margin: 0 0 8px;
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--pf-brand-primary);
+  letter-spacing: -0.02em;
+}
+
+.pf-content .platform-lead {
+  margin: 0 0 14px;
+  color: var(--pf-text-secondary);
+  font-size: 0.92rem;
+  line-height: 1.5;
+  max-width: 52rem;
+}
+
+.pf-content .platform-lead a {
+  color: var(--pf-brand-primary);
+  font-weight: 600;
+}
+
+.pf-content .orders-subnav {
+  margin: 0;
+  padding: 4px;
+  border-radius: 999px;
+  background: var(--pf-bg-muted);
+  border: 1px solid var(--pf-border);
+  gap: 4px;
+}
+
+.pf-content .orders-subnav-tab {
+  border: none;
+  background: transparent;
+  color: var(--pf-text-secondary);
+  font-weight: 600;
+  border-radius: 999px;
+  min-height: 38px;
+}
+
+.pf-content .orders-subnav-tab:hover {
+  color: var(--pf-brand-primary);
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.pf-content .orders-subnav-tab.active {
+  background: #fff;
+  color: var(--pf-brand-primary);
+  box-shadow: var(--pf-shadow-sm);
+}
+
+.pf-content .orders-subnav-tab.active::after {
+  display: none;
+}
+
+.pf-content .orders-lifecycle-tabs {
+  margin: 0;
+  padding: 4px;
+  border-radius: 999px;
+  background: var(--pf-bg-muted);
+  border: 1px solid var(--pf-border);
+  display: inline-flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.pf-content .orders-lifecycle-tab {
+  border: none;
+  background: transparent;
+  color: var(--pf-text-secondary);
+  font-weight: 600;
+  border-radius: 999px;
+  padding: 8px 16px;
+}
+
+.pf-content .orders-lifecycle-tab.active {
+  background: #fff;
+  color: var(--pf-brand-primary);
+  box-shadow: var(--pf-shadow-sm);
+}
+
+.pf-content .orders-filter-card {
+  margin: 0;
+  padding: 16px 18px;
+  border-radius: var(--pf-radius-md);
+  border: 1px solid var(--pf-border);
+  background: var(--pf-bg-surface);
+  box-shadow: var(--pf-shadow-sm);
+}
+
+.pf-content .orders-filter-card label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--pf-text-secondary);
+}
+
+.pf-content .orders-filter-card select,
+.pf-content .orders-filter-card input {
+  border-color: var(--pf-border-strong);
+  border-radius: var(--pf-radius-sm);
+}
+
+.pf-content .orders-card {
+  border-radius: var(--pf-radius-md);
+  border: 1px solid var(--pf-border);
+  background: var(--pf-bg-surface);
+  box-shadow: var(--pf-shadow-sm);
+}
+
+.pf-content .btn-brown,
+.pf-content .btn-coral {
+  border: 1px solid var(--pf-border-strong);
+  border-radius: var(--pf-radius-sm);
+  font-weight: 600;
+  padding: 9px 14px;
+  cursor: pointer;
+}
+
+.pf-content .btn-brown {
+  background: linear-gradient(180deg, var(--pf-brand-primary-soft) 0%, var(--pf-brand-primary) 100%);
+  color: #fff;
+  border-color: var(--pf-brand-primary);
+}
+
+.pf-content .btn-brown:hover {
+  filter: brightness(1.06);
+  background: linear-gradient(180deg, var(--pf-brand-primary-soft) 0%, var(--pf-brand-primary) 100%);
+}
+
+.pf-content .btn-coral {
+  background: #fff;
+  color: var(--pf-brand-primary);
+}
+
+.pf-content .btn-coral:hover {
+  border-color: var(--pf-brand-accent);
+  background: rgba(197, 148, 52, 0.08);
+  color: var(--pf-brand-primary);
+}
+
+.pf-content .ops-summary-strip--orders {
+  border-radius: var(--pf-radius-md);
+  border: 1px solid var(--pf-border);
+  background: var(--pf-bg-surface);
+  box-shadow: var(--pf-shadow-sm);
+}
+
+.pf-content .orders-quick-filters {
+  border-radius: var(--pf-radius-md);
+  border: 1px solid var(--pf-border);
+  background: var(--pf-bg-surface);
+}
+
+.pf-content .orders-quick-btn.active {
+  background: rgba(197, 148, 52, 0.14);
+  color: var(--pf-brand-primary);
+  border-color: var(--pf-brand-accent);
+}
+
+.pf-content .orders-table thead th {
+  background: var(--pf-bg-muted);
+  color: var(--pf-text-secondary);
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.pf-content .orders-table tbody tr:hover {
+  background: rgba(0, 33, 71, 0.03);
+}
+
+/* ── Ana panel (legacy ops-kpi) ── */
+.pf-content .ops-dashboard-page,
+.pf-content .ops-analytics-page,
+.pf-content .ops-customers-page,
+.pf-content .ops-reports-page,
+.pf-content .ops-integrations-page,
+.pf-content .ops-orders-page {
+  gap: 18px;
+}
+
+.pf-content .ops-kpi-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px;
+  margin-bottom: 0;
+}
+
+.pf-content .ops-kpi-card {
+  padding: 16px;
+  border-radius: var(--pf-radius-md);
+  border: 1px solid var(--pf-border);
+  background: linear-gradient(180deg, #ffffff 0%, #fafbfd 100%);
+  box-shadow: var(--pf-shadow-sm);
+  min-height: 100px;
+}
+
+.pf-content .ops-kpi-value {
+  font-size: clamp(1.1rem, 2.2vw, 1.45rem);
+  font-weight: 700;
+  color: var(--pf-brand-primary);
+}
+
+.pf-content .ops-kpi-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--pf-text-secondary);
+}
+
+.pf-content .ops-section {
+  border-radius: var(--pf-radius-md);
+  border: 1px solid var(--pf-border);
+  background: var(--pf-bg-surface);
+  box-shadow: var(--pf-shadow-sm);
+  padding: 18px 20px;
+}
+
+.pf-content .ops-section h3 {
+  margin: 0 0 12px;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--pf-brand-primary);
+}
+
+.pf-content .ops-panel {
+  border-color: var(--pf-border);
+  box-shadow: var(--pf-shadow-sm);
+}
+
+.pf-content .ops-btn-secondary {
+  border-color: var(--pf-border-strong);
+  color: var(--pf-brand-primary);
+  font-weight: 600;
+}
+
+.pf-content .ops-btn-secondary:hover {
+  border-color: var(--pf-brand-accent);
+  background: rgba(197, 148, 52, 0.06);
+}
+
+.pf-content .ops-quick-link {
+  border-color: var(--pf-border);
+  background: var(--pf-bg-muted);
+}
+
+.pf-content .ops-quick-link:hover {
+  border-color: var(--pf-brand-accent);
+  background: #fff;
+}
+
+.pf-content .ops-quick-link-title {
+  color: var(--pf-brand-primary);
+}
+
+/* Eski sarı rehber kutusu — daha sade */
+.pf-content .ops-analytics-eyebrow {
+  margin: 0 0 6px;
+}
+
+.pf-content .ops-panel-intro .ops-analytics-eyebrow {
+  color: var(--pf-brand-accent-strong);
+}
+
+.pf-content .ops-dashboard-page {
+  display: grid;
+  gap: 18px;
+}
+
+.pf-content .ops-dashboard-actions {
+  margin: 14px 0 0;
+}
+
+.pf-content .ops-dashboard-poll-note {
+  margin: 14px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--pf-border);
+}
+
+.pf-content .ops-panel-head--split {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.pf-content .ops-panel-head--split .ops-btn {
+  text-decoration: none;
+}
+
+.pf-content .page-guide-block {
+  border-radius: var(--pf-radius-md);
+  border-color: #fcd34d;
+  background: #fffbeb;
+  font-size: 0.84rem;
+}
+
+/* ── Personel / Şubeler (Yönetim) ── */
+.pf-content .ops-staff-page,
+.pf-content .ops-branches-page,
+.pf-content .ops-system-page,
+.pf-content .ops-integrations-page {
+  display: grid;
+  gap: 18px;
+}
+
+.pf-content .ops-staff-hero,
+.pf-content .ops-admin-hero,
+.pf-content .ops-system-hero {
+  display: flex;
+  justify-content: space-between;
+  align-items: stretch;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 18px 20px;
+  border-radius: var(--pf-radius-md);
+  border: 1px solid var(--pf-border);
+  background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+  box-shadow: var(--pf-shadow-sm);
+}
+
+.pf-content .ops-staff-title,
+.pf-content .ops-admin-title,
+.pf-content .ops-system-title {
+  margin: 0 0 8px;
+  font-size: clamp(1.35rem, 2.4vw, 1.65rem);
+  font-weight: 800;
+  color: var(--pf-brand-primary);
+  letter-spacing: -0.02em;
+}
+
+.pf-content .ops-staff-lead,
+.pf-content .ops-admin-lead,
+.pf-content .ops-system-lead {
+  margin: 0;
+  max-width: 560px;
+  color: var(--pf-text-secondary);
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+.pf-content .ops-staff-stats,
+.pf-content .ops-admin-stats,
+.pf-content .ops-system-stats {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: stretch;
+}
+
+.pf-content .ops-staff-stat,
+.pf-content .ops-admin-stat,
+.pf-content .ops-system-stat {
+  min-width: 120px;
+  padding: 14px 16px;
+  border-radius: var(--pf-radius-sm);
+  background: #fff;
+  border: 1px solid var(--pf-border);
+  display: grid;
+  gap: 4px;
+}
+
+.pf-content .ops-staff-stat-value,
+.pf-content .ops-admin-stat-value,
+.pf-content .ops-system-stat-value {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: var(--pf-brand-primary);
+  line-height: 1;
+}
+
+.pf-content .ops-staff-stat-value--sm,
+.pf-content .ops-admin-stat-value--sm,
+.pf-content .ops-system-stat-value--sm {
+  font-size: 1.15rem;
+}
+
+.pf-content .ops-staff-stat-label,
+.pf-content .ops-admin-stat-label,
+.pf-content .ops-system-stat-label {
+  font-size: 0.78rem;
+  color: var(--pf-text-secondary);
+}
+
+.pf-content .ops-staff-stat--muted .ops-staff-stat-value,
+.pf-content .ops-admin-stat--muted .ops-admin-stat-value,
+.pf-content .ops-system-stat--muted .ops-system-stat-value {
+  color: var(--pf-text-secondary);
+}
+
+.pf-content .ops-staff-warning {
+  margin: 0;
+}
+
+.pf-content .ops-staff-warning p {
+  margin: 6px 0 0;
+}
+
+.pf-content .ops-staff-warning-link {
+  margin: 8px 0 0;
+  font-size: 0.84rem;
+}
+
+.pf-content .ops-staff-warning-link a {
+  color: inherit;
+  font-weight: 700;
+}
+
+.pf-content .ops-staff-panel,
+.pf-content .ops-admin-panel {
+  padding: 0;
+  overflow: hidden;
+}
+
+.pf-content .ops-staff-panel .ops-panel-head,
+.pf-content .ops-admin-panel .ops-panel-head {
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--pf-border);
+  background: #fafbfd;
+}
+
+.pf-content .ops-staff-list,
+.pf-content .ops-admin-list {
+  padding: 16px 18px 18px;
+}
+
+.pf-content .ops-admin-list-empty {
+  padding: 16px 18px 18px;
+  margin: 0;
+}
+
+.pf-content .ops-staff-form-grid,
+.pf-content .ops-admin-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 16px;
+  padding: 16px 18px 0;
+}
+
+.pf-content .ops-admin-form-grid--triple {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.pf-content .ops-staff-form-grid .ops-field,
+.pf-content .ops-admin-form-grid .ops-field {
+  margin: 0;
+}
+
+.pf-content .ops-staff-form-grid .ops-field input,
+.pf-content .ops-staff-form-grid .ops-field select,
+.pf-content .ops-admin-form-grid .ops-field input,
+.pf-content .ops-admin-form-grid .ops-field select {
+  width: 100%;
+  margin-bottom: 0;
+  border-color: var(--pf-border-strong);
+  border-radius: var(--pf-radius-sm);
+  font-size: 0.95rem;
+}
+
+.pf-content .ops-staff-form-actions,
+.pf-content .ops-admin-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 16px 18px 0;
+}
+
+.pf-content .ops-staff-panel .ops-feedback,
+.pf-content .ops-admin-panel .ops-feedback {
+  margin: 12px 18px 18px;
+}
+
+.pf-content .ops-admin-table-wrap {
+  border: none;
+  border-radius: 0;
+}
+
+.pf-content .ops-staff-table-wrap {
+  border: none;
+  border-radius: 0;
+}
+
+.pf-content .ops-staff-table code.staff-user-code {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--pf-bg-muted);
+  color: var(--pf-text-secondary);
+  font-size: 0.78rem;
+}
+
+.pf-content .staff-role-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  white-space: nowrap;
+  background: rgba(0, 33, 71, 0.08);
+  color: var(--pf-brand-primary);
+}
+
+.pf-content .staff-role-badge--courier {
+  background: rgba(197, 148, 52, 0.14);
+  color: #7c5a12;
+}
+
+.pf-content .staff-role-badge--supervisor {
+  background: #ede9fe;
+  color: #5b21b6;
+}
+
+.pf-content .staff-session-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 6px;
+}
+
+.pf-content .staff-session-list li {
+  display: grid;
+  gap: 2px;
+}
+
+.pf-content .staff-session-device {
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: var(--pf-text-primary);
+}
+
+.pf-content .staff-session-meta {
+  font-size: 0.75rem;
+  color: var(--pf-text-secondary);
+}
+
+.pf-content .staff-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 9rem;
+}
+
+.pf-content .ops-staff-dialog {
+  border: none;
+  border-radius: var(--pf-radius-md);
+  padding: 0;
+  max-width: 420px;
+  width: calc(100% - 32px);
+  box-shadow: var(--pf-shadow-md);
+}
+
+.pf-content .ops-staff-dialog::backdrop {
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.pf-content .ops-staff-dialog-inner {
+  padding: 24px;
+}
+
+.pf-content .ops-staff-dialog-title {
+  margin: 0 0 8px;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--pf-brand-primary);
+}
+
+/* ── Kanallar (Integrations) ── */
+.pf-content .ops-int-hero {
+  display: flex;
+  justify-content: space-between;
+  align-items: stretch;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 18px 20px;
+  border-radius: var(--pf-radius-md);
+  border: 1px solid var(--pf-border);
+  background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+  box-shadow: var(--pf-shadow-sm);
+}
+
+.pf-content .ops-int-title {
+  margin: 0 0 8px;
+  font-size: clamp(1.35rem, 2.4vw, 1.65rem);
+  font-weight: 800;
+  color: var(--pf-brand-primary);
+  letter-spacing: -0.02em;
+}
+
+.pf-content .ops-int-lead {
+  margin: 0;
+  max-width: 560px;
+  color: var(--pf-text-secondary);
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+.pf-content .ops-int-stats {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: stretch;
+}
+
+.pf-content .ops-int-stat {
+  min-width: 120px;
+  padding: 14px 16px;
+  border-radius: var(--pf-radius-sm);
+  background: #fff;
+  border: 1px solid var(--pf-border);
+  display: grid;
+  gap: 4px;
+}
+
+.pf-content .ops-int-stat-value {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: var(--pf-brand-primary);
+  line-height: 1;
+}
+
+.pf-content .ops-int-stat-value--sm {
+  font-size: 1.15rem;
+}
+
+.pf-content .ops-int-stat-label {
+  font-size: 0.78rem;
+  color: var(--pf-text-secondary);
+}
+
+.pf-content .ops-int-stat--warn .ops-int-stat-value {
+  color: #b45309;
+}
+
+.pf-content .ops-int-panel {
+  padding: 0;
+  overflow: hidden;
+}
+
+.pf-content .ops-int-panel .ops-panel-head {
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--pf-border);
+  background: #fafbfd;
+}
+
+.pf-content .ops-int-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  padding: 16px 18px 18px;
+}
+
+.pf-content .ops-int-card {
+  text-align: left;
+  border: 1px solid var(--pf-border);
+  border-radius: var(--pf-radius-md);
+  background: linear-gradient(180deg, #ffffff 0%, #fafbfd 100%);
+  padding: 16px 18px;
+  cursor: pointer;
+  box-shadow: var(--pf-shadow-sm);
+  width: 100%;
+  display: grid;
+  gap: 10px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.pf-content .ops-int-card:hover {
+  border-color: var(--pf-brand-accent);
+  box-shadow: var(--pf-shadow-md);
+  transform: translateY(-1px);
+}
+
+.pf-content .ops-int-card-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.pf-content .ops-int-card-logo {
+  flex-shrink: 0;
+}
+
+.pf-content .ops-int-card-title-wrap {
+  display: grid;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.pf-content .ops-int-card-title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--pf-brand-primary);
+}
+
+.pf-content .ops-int-card-msg {
+  margin: 0;
+  color: var(--pf-text-secondary);
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.pf-content .ops-int-card-meta {
+  margin: 0;
+  color: var(--pf-text-secondary);
+  font-size: 0.78rem;
+}
+
+.pf-content .ops-int-card-cta {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--pf-brand-accent-strong);
+}
+
+.pf-content .ops-int-card--connected {
+  border-left: 3px solid #10b981;
+}
+
+.pf-content .ops-int-card--ready {
+  border-left: 3px solid #3b82f6;
+}
+
+.pf-content .ops-int-card--error {
+  border-left: 3px solid #ef4444;
+}
+
+.pf-content .ops-int-card--missing,
+.pf-content .ops-int-card--disabled {
+  border-left: 3px solid #94a3b8;
+}
+
+.pf-content .ops-int-pill {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+}
+
+.pf-content .ops-int-alert-panel {
+  padding: 0;
+  overflow: hidden;
+  border-color: #fed7aa;
+}
+
+.pf-content .ops-int-alert-panel .ops-panel-head {
+  padding: 16px 18px;
+  border-bottom: 1px solid #fed7aa;
+  background: #fffbeb;
+}
+
+.pf-content .ops-int-alert-list {
+  margin: 0;
+  padding: 16px 18px 18px 2rem;
+}
+
+.pf-content .ops-int-automation-panel {
+  padding: 0 18px 18px;
+}
+
+.pf-content .ops-int-automation-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 16px 0;
+}
+
+.pf-content .ops-int-worker-status {
+  padding: 12px 14px;
+  border-radius: var(--pf-radius-sm);
+  background: var(--pf-bg-muted);
+  border: 1px solid var(--pf-border);
+  font-size: 0.88rem;
+  color: var(--pf-text-secondary);
+}
+
+.pf-content .ops-int-worker-status p {
+  margin: 0 0 6px;
+}
+
+.pf-content .ops-int-worker-status p:last-child {
+  margin-bottom: 0;
+}
+
+.pf-content .ops-int-worker-grid {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.pf-content .ops-int-interval-field input {
+  max-width: 6rem;
+  margin-bottom: 0;
+}
+
+.pf-content .ops-int-action-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.pf-content .ops-int-detail {
+  display: grid;
+  gap: 16px;
+}
+
+.pf-content .ops-int-back {
+  color: var(--pf-brand-primary);
+  padding-bottom: 0;
+}
+
+.pf-content .ops-int-detail-hero {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+  padding: 18px 20px;
+  border-radius: var(--pf-radius-md);
+  border: 1px solid var(--pf-border);
+  background: var(--pf-bg-surface);
+  box-shadow: var(--pf-shadow-sm);
+}
+
+.pf-content .ops-int-detail-brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.pf-content .ops-int-detail-brand h2 {
+  margin: 0 0 4px;
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: var(--pf-brand-primary);
+}
+
+.pf-content .ops-int-detail-panel {
+  padding: 0;
+  overflow: hidden;
+  margin-bottom: 0;
+}
+
+.pf-content .ops-int-detail-panel .ops-panel-head {
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--pf-border);
+  background: #fafbfd;
+}
+
+.pf-content .ops-int-detail-panel .ops-collapsible-body,
+.pf-content .ops-int-detail-panel > .ops-meta,
+.pf-content .ops-int-detail-panel > .ops-check,
+.pf-content .ops-int-detail-panel > .ops-steps,
+.pf-content .ops-int-detail-panel > .ops-alert {
+  margin-left: 18px;
+  margin-right: 18px;
+}
+
+.pf-content .ops-int-detail-note {
+  padding: 16px 18px 0;
+  margin: 0;
+}
+
+.pf-content .ops-int-detail-panel .ops-check {
+  padding: 0 18px;
+}
+
+.pf-content .ops-int-detail-panel .ops-check:first-of-type {
+  padding-top: 16px;
+}
+
+.pf-content .ops-int-detail-panel .ops-check:last-of-type {
+  padding-bottom: 18px;
+}
+
+.pf-content .ops-int-detail-panel .ops-steps {
+  padding: 16px 18px 18px 2rem;
+  margin: 0;
+}
+
+.pf-content .ops-int-portal-link {
+  margin: 0;
+  padding: 0 18px 18px;
+}
+
+.pf-content .ops-int-portal-link .ops-btn {
+  text-decoration: none;
+  display: inline-flex;
+}
+
+.pf-content .ops-int-form-fields {
+  display: grid;
+  gap: 4px;
+}
+
+.pf-content .ops-int-subheading {
+  margin: 0 0 8px;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--pf-brand-primary);
+}
+
+.pf-content .ops-int-empty {
+  grid-column: 1 / -1;
+}
+
+.pf-content .ops-integrations-page .ops-section {
+  margin-bottom: 0;
+}
+
+@media (max-width: 760px) {
+  .pf-content .ops-int-action-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .pf-content .ops-int-action-bar .ops-btn {
+    justify-content: center;
+  }
+}
+
+/* ── Siparişler (HzlMrktOps) ── */
+.pf-content .ops-orders-page {
+  display: grid;
+}
+
+.pf-content .ops-orders-hero {
+  display: flex;
+  justify-content: space-between;
+  align-items: stretch;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 18px 20px;
+  border-radius: var(--pf-radius-md);
+  border: 1px solid var(--pf-border);
+  background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+  box-shadow: var(--pf-shadow-sm);
+}
+
+.pf-content .ops-orders-title {
+  margin: 0 0 8px;
+  font-size: clamp(1.35rem, 2.4vw, 1.65rem);
+  font-weight: 800;
+  color: var(--pf-brand-primary);
+  letter-spacing: -0.02em;
+}
+
+.pf-content .ops-orders-lead {
+  margin: 0;
+  max-width: 560px;
+  color: var(--pf-text-secondary);
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+.pf-content .ops-orders-stats {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: stretch;
+}
+
+.pf-content .ops-orders-stat {
+  min-width: 110px;
+  padding: 14px 16px;
+  border-radius: var(--pf-radius-sm);
+  background: #fff;
+  border: 1px solid var(--pf-border);
+  display: grid;
+  gap: 4px;
+}
+
+.pf-content .ops-orders-stat-value {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: var(--pf-brand-primary);
+  line-height: 1;
+}
+
+.pf-content .ops-orders-stat-value--sm {
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.pf-content .ops-orders-stat-label {
+  font-size: 0.78rem;
+  color: var(--pf-text-secondary);
+}
+
+.pf-content .ops-orders-stat--muted .ops-orders-stat-value {
+  color: var(--pf-text-secondary);
+}
+
+.pf-content .ops-orders-toolbar-panel {
+  padding: 16px 18px;
+  display: grid;
+  gap: 14px;
+}
+
+.pf-content .ops-orders-channel-nav {
+  margin: 0;
+}
+
+.pf-content .ops-orders-lifecycle-nav {
+  margin: 0;
+}
+
+.pf-content .ops-orders-filter-panel {
+  padding: 0;
+  overflow: hidden;
+  margin: 0;
+}
+
+.pf-content .ops-orders-filter-panel .ops-panel-head {
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--pf-border);
+  background: #fafbfd;
+}
+
+.pf-content .ops-orders-filter-body {
+  padding: 16px 18px 18px;
+}
+
+.pf-content .ops-orders-filter-panel.orders-filter-card {
+  border-radius: var(--pf-radius-md);
+  box-shadow: var(--pf-shadow-sm);
+}
+
+.pf-content .ops-orders-table-panel {
+  padding: 0;
+  overflow: hidden;
+  margin: 0;
+}
+
+.pf-content .ops-orders-table-panel .ops-panel-head {
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--pf-border);
+  background: #fafbfd;
+}
+
+.pf-content .ops-orders-table-toolbar {
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--pf-border);
+  background: #fff;
+}
+
+.pf-content .ops-orders-table-panel .orders-table-wrap {
+  border: none;
+  border-radius: 0;
+}
+
+.pf-content .ops-orders-table-panel .orders-footer {
+  padding: 12px 18px 16px;
+  border-top: 1px solid var(--pf-border);
+  background: #fafbfd;
+}
+
+.pf-content .ops-orders-page .orders-cache-banner,
+.pf-content .ops-orders-page .orders-sync-banner {
+  margin: 0;
+  border-radius: var(--pf-radius-md);
+}
+
+.pf-content .ops-orders-page .orders-search {
+  border-color: var(--pf-border-strong);
+  border-radius: 999px;
+}
+
+.pf-content .ops-orders-page .orders-sound-toggle.is-on {
+  border-color: var(--pf-brand-accent);
+  background: rgba(197, 148, 52, 0.1);
+  color: var(--pf-brand-primary);
+}
+
+/* ── Sistem Nabzı ── */
+.pf-content .ops-system-mode-panel {
+  padding: 0;
+  overflow: hidden;
+}
+
+.pf-content .ops-system-mode-panel .ops-panel-head {
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--pf-border);
+  background: #fafbfd;
+}
+
+.pf-content .ops-system-mode-card {
+  padding: 16px 18px 18px;
+  margin: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+}
+
+.pf-content .ops-system-grid {
+  display: grid;
+  gap: 16px;
+}
+
+@media (min-width: 960px) {
+  .pf-content .ops-system-grid {
+    grid-template-columns: 1fr 1fr;
+    align-items: start;
+  }
+}
+
+.pf-content .ops-system-panel {
+  padding: 0;
+  overflow: hidden;
+  margin: 0;
+}
+
+.pf-content .ops-system-panel .ops-panel-head {
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--pf-border);
+  background: #fafbfd;
+}
+
+.pf-content .ops-system-automation-grid,
+.pf-content .ops-system-activity {
+  padding: 16px 18px 18px;
+  margin: 0;
+}
+
+.pf-content .ops-system-page .ops-section {
+  margin-bottom: 0;
+}
+
+@media (max-width: 760px) {
+  .pf-content .ops-staff-form-grid,
+  .pf-content .ops-admin-form-grid,
+  .pf-content .ops-admin-form-grid--triple {
+    grid-template-columns: 1fr;
+  }
+
+  .pf-content .staff-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .pf-content .ops-orders-table-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .pf-content .ops-orders-table-toolbar .btn-brown,
+  .pf-content .ops-orders-table-toolbar .orders-search {
+    width: 100%;
+  }
+}

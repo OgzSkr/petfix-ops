@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import {
   findLineForBarcode,
   computePickingProgress,
-  normalizeScanBarcode
+  normalizeScanBarcode,
+  canDepotPickOrder
 } from '../lib/ops-hub/picking/picking-service.js';
 
 const LINES = [
@@ -56,4 +57,82 @@ test('computePickingProgress incomplete when qty missing', () => {
     { matching_status: 'matched', quantity: 2, picked_qty: 1 }
   ]);
   assert.equal(progress.isComplete, false);
+});
+
+test('canDepotPickOrder allows channel-picked orders before depot completes', () => {
+  assert.equal(
+    canDepotPickOrder({
+      status: 'picked',
+      picking_completed_at: null
+    }),
+    true
+  );
+});
+
+test('canDepotPickOrder rejects when depot already completed', () => {
+  assert.equal(
+    canDepotPickOrder({
+      status: 'picked',
+      picking_completed_at: '2026-06-22T12:00:00.000Z'
+    }),
+    false
+  );
+});
+
+test('canDepotPickOrder rejects ready orders without open depot', () => {
+  assert.equal(
+    canDepotPickOrder({
+      status: 'ready',
+      picking_completed_at: '2026-06-22T12:00:00.000Z'
+    }),
+    false
+  );
+});
+
+test('Uber invoiced-before-depot scenario stays incomplete until lines picked', () => {
+  const progress = computePickingProgress([
+    {
+      matching_status: 'matched',
+      quantity: 1,
+      picked_qty: 0
+    },
+    {
+      matching_status: 'matched',
+      quantity: 2,
+      picked_qty: 0
+    }
+  ]);
+  assert.equal(progress.isComplete, false);
+  assert.equal(progress.completeLines, 0);
+  assert.equal(progress.actionableLines, 2);
+  assert.equal(
+    canDepotPickOrder({ status: 'picked', picking_completed_at: null }),
+    true
+  );
+});
+
+test('resolveCustomerOrderTotal prefers channel discounted total', async () => {
+  const { resolveCustomerOrderTotal } = await import('../lib/ops-hub/picking/picking-service.js');
+
+  assert.equal(
+    resolveCustomerOrderTotal(
+      {
+        channel: 'trendyol_go',
+        raw_payload: { grossAmount: 2505, totalPrice: 2355 }
+      },
+      2505
+    ),
+    2355
+  );
+
+  assert.equal(
+    resolveCustomerOrderTotal(
+      {
+        channel: 'getir',
+        raw_payload: { totalPriceWithPackaging: 3581, totalPrice: 3579 }
+      },
+      3600
+    ),
+    3581
+  );
 });
