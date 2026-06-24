@@ -21,7 +21,7 @@ test('computeGetirOrderFinancials applies rules for discount and commission', ()
     rawPayload: {
       totalPrice: 500,
       totalPriceWithPackaging: 500,
-      totalDiscountAmount: 50
+      merchantCampaignAmount: 50
     }
   });
 
@@ -96,7 +96,7 @@ test('computeGetirOrderFinancials shows rule commission rate on discounted baske
       totalPrice: 1071.02,
       totalPriceWithPackaging: 1072.02,
       packagingInfo: { totalPackagingPrice: 1 },
-      totalDiscountAmount: 250,
+      merchantCampaignAmount: 250,
       deliveryType: 1
     }
   });
@@ -147,6 +147,26 @@ test('computeGetirOrderFinancials uses rules for r977 with webhook discount', ()
   assert.notEqual(financials.netAmount, 5501.96);
 });
 
+test('computeGetirOrderFinancials ignores spurious totalDiscountAmount on y800-like basket', () => {
+  const financials = computeGetirOrderFinancials({
+    rawPayload: {
+      totalPrice: 748,
+      totalPriceWithPackaging: 749,
+      grossAmount: 749,
+      totalDiscountAmount: 20,
+      totalPriceWithSupplierSupport: 749,
+      products: [
+        { count: 2, price: 299, finalTotalPrice: 598, name: { tr: 'Kedi kumu' } },
+        { count: 1, price: 150, finalTotalPrice: 150, name: { tr: 'Oyuncak' } }
+      ]
+    }
+  });
+
+  assert.equal(financials.sellerDiscount, 0);
+  assert.equal(financials.discountedBasket, 748);
+  assert.equal(financials.grossAmount, 749);
+});
+
 test('computeGetirOrderFinancials ignores portal settlement breakdown in payload', () => {
   const financials = computeGetirOrderFinancials({
     rawPayload: {
@@ -169,7 +189,7 @@ test('computeGetirOrderFinancials ignores portal settlement breakdown in payload
   assert.equal(financials.netAmount, 430.86);
 });
 
-test('applyGetirBenimposFinancials sets discountRate and note on payload', () => {
+test('applyGetirBenimposFinancials sets customer discount only (no commission/stopaj in BenimPOS)', () => {
   const payload = buildSalesCreatePayload({
     paymentType: '31481957',
     note: 'Getir #G12345',
@@ -180,13 +200,15 @@ test('applyGetirBenimposFinancials sets discountRate and note on payload', () =>
     rawPayload: {
       totalPrice: 500,
       totalPriceWithPackaging: 500,
-      totalDiscountAmount: 50
+      merchantCampaignAmount: 50
     }
   };
 
-  const { payload: adjusted, financials } = applyGetirBenimposFinancials(payload, orderPackage);
-  assert.ok(adjusted.data.discountRate > 0);
-  assert.match(adjusted.data.note, /Net: 386,87 TL/);
+  const { payload: adjusted, financials, customerCharge } = applyGetirBenimposFinancials(payload, orderPackage);
+  assert.ok(Math.abs(adjusted.data.discountRate - 10) < 0.05);
+  assert.equal(adjusted.data.note, 'Getir #G12345');
+  assert.doesNotMatch(adjusted.data.note, /Stopaj/);
+  assert.equal(customerCharge, 450);
   assert.equal(financials.netAmount, 386.87);
 });
 
@@ -237,7 +259,7 @@ test('buildChannelSaleFromOrder attaches getir financials', () => {
     rawPayload: {
       totalPrice: 500,
       totalPriceWithPackaging: 500,
-      totalDiscountAmount: 50
+      merchantCampaignAmount: 50
     },
     lines: [{
       barcode,
@@ -249,13 +271,57 @@ test('buildChannelSaleFromOrder attaches getir financials', () => {
   }, db, { channelId: 'getir', salePolicy: 'sale-strict' });
 
   assert.ok(built.financials);
-  assert.equal(built.payload.data.discountRate, built.financials.discountRate);
+  assert.ok(Math.abs(built.payload.data.discountRate - 10) < 0.05);
   assert.match(built.payload.data.note, /^Getir #G12345/);
+  assert.equal(built.benimposSaleTotals.customerCharge, 450);
   assert.equal(built.financials.netAmount, 386.87);
 });
 
-test('extractGetirCampaignAmount reads totalDiscountAmount from webhook payload', () => {
-  assert.equal(extractGetirCampaignAmount({ totalDiscountAmount: 100 }), 100);
+test('extractGetirCampaignAmount reads merchantCampaignAmount from webhook payload', () => {
+  assert.equal(extractGetirCampaignAmount({ merchantCampaignAmount: 100 }), 100);
+});
+
+test('extractGetirCampaignAmount uses product line list minus paid totals', () => {
+  assert.equal(extractGetirCampaignAmount({
+    totalDiscountAmount: 999,
+    products: [
+      { count: 2, price: 100, finalTotalPrice: 150 },
+      { count: 1, price: 50, finalTotalPrice: 50 }
+    ]
+  }), 50);
+});
+
+test('extractGetirCampaignAmount ignores totalDiscountAmount when product lines show no discount', () => {
+  assert.equal(extractGetirCampaignAmount({
+    totalPrice: 748,
+    totalPriceWithPackaging: 749,
+    totalDiscountAmount: 20,
+    totalPriceWithSupplierSupport: 749,
+    products: [
+      { count: 2, price: 299, finalTotalPrice: 598 },
+      { count: 1, price: 150, finalTotalPrice: 150 }
+    ]
+  }), 0);
+});
+
+test('extractGetirCampaignAmount ignores removed lines with finalCount zero', () => {
+  assert.equal(extractGetirCampaignAmount({
+    totalPrice: 596,
+    products: [
+      { count: 1, price: 205, finalCount: 1, finalTotalPrice: 205 },
+      { count: 1, price: 225, finalCount: 0, finalTotalPrice: 0 },
+      { count: 1, price: 205, finalCount: 1, finalTotalPrice: 205 },
+      { count: 1, price: 185, finalCount: 1, finalTotalPrice: 185 }
+    ]
+  }), 0);
+});
+
+test('extractGetirCampaignAmount accepts totalDiscountAmount when charged amount corroborates', () => {
+  assert.equal(extractGetirCampaignAmount({
+    totalPrice: 5601.96,
+    totalDiscountAmount: 100,
+    totalChargedAmountAfterProvisionOrRefund: 5501.96
+  }), 100);
 });
 
 test('analyzeOrderPackages keeps Getir rule financials on order rows', async () => {

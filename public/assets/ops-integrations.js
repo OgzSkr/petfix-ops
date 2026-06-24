@@ -5,7 +5,6 @@ const ops = window.OpsCommon;
 
 const listView = document.getElementById('listView');
 const detailView = document.getElementById('detailView');
-const integrationsHero = document.getElementById('integrationsHero');
 const integrationCards = document.getElementById('integrationCards');
 const setupAlerts = document.getElementById('setupAlerts');
 const setupAlertsList = document.getElementById('setupAlertsList');
@@ -247,7 +246,6 @@ function updateIntegrationStats(integrations) {
 
 function showListView() {
   currentChannel = null;
-  integrationsHero?.classList.remove('hidden');
   listView.classList.remove('hidden');
   detailView.classList.add('hidden');
   history.replaceState(null, '', '/ops/integrations/');
@@ -255,7 +253,6 @@ function showListView() {
 
 function showDetailView(channel) {
   currentChannel = channel;
-  integrationsHero?.classList.add('hidden');
   listView.classList.add('hidden');
   detailView.classList.remove('hidden');
   history.replaceState(null, '', `/ops/integrations/?channel=${encodeURIComponent(channel)}`);

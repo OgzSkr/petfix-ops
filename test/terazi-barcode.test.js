@@ -84,6 +84,40 @@ test('resolveTeraziSaleUnitPrice keeps line total when scaling quantity', () => 
   assert.equal(unit * qty, 320);
 });
 
+test('resolveTeraziSaleQuantity uses total line grams without double-counting order qty', () => {
+  const master = {
+    name: "Hill's Tuna Balıklı Açık Kısırlaştırılmış Kedi Maması 1 kg",
+    benimposBarcode: '2900073',
+    normalizedWeightG: 1000
+  };
+  const terazi = resolveTeraziSaleBarcode({
+    baseBarcode: '2900073',
+    master,
+    orderLineName: master.name,
+    orderGrams: 3000
+  });
+  assert.equal(terazi.teraziApplied, true);
+  assert.equal(terazi.costRatio, 3);
+  assert.equal(terazi.orderGramsIsTotal, true);
+  assert.equal(resolveTeraziSaleQuantity(terazi, 3), 3);
+});
+
+test('resolveTeraziSaleBarcode skips konserv lines with mismatched pack weights', () => {
+  const master = {
+    name: 'N&D OCEAN TON BALIĞI VE SOMONLU KEDİ KONSERVESİ 80 GR',
+    benimposBarcode: '8606014102031',
+    normalizedWeightG: 80
+  };
+  const result = resolveTeraziSaleBarcode({
+    baseBarcode: '8606014102031',
+    master,
+    orderLineName: 'N&D Ocean Ton Balıklı ve Somonlu Kedi Konserve Maması (70 g)'
+  });
+  assert.equal(result.teraziApplied, false);
+  assert.equal(resolveTeraziSaleQuantity(result, 1), 1);
+  assert.equal(resolveTeraziSaleUnitPrice(123, result), 123);
+});
+
 test('PTFX027 2x500g discounted channel price maps to 600 TL BenimPOS total', () => {
   const master = {
     name: 'SOMONLU KISIRLAŞTIRILMIŞ KEDI MAMASI AÇIK',

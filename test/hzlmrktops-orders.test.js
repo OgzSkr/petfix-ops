@@ -12,7 +12,7 @@ test('listHzlMrktOpsOrders merges active channel rows and stats', async () => {
           rows: [
             {
               orderNumber: 'U-1',
-              orderDateMs: Date.parse('2026-06-10T12:00:00.000Z'),
+              orderDateMs: Date.parse('2026-06-20T15:00:00.000Z'),
               status: 'Delivered',
               salesAmount: 100,
               netProfit: 10,
@@ -31,7 +31,7 @@ test('listHzlMrktOpsOrders merges active channel rows and stats', async () => {
           rows: [
             {
               orderNumber: 'Y-1',
-              orderDateMs: Date.parse('2026-06-09T12:00:00.000Z'),
+              orderDateMs: Date.parse('2026-06-19T15:00:00.000Z'),
               status: 'Delivered',
               salesAmount: 80,
               netProfit: -5,
@@ -49,7 +49,11 @@ test('listHzlMrktOpsOrders merges active channel rows and stats', async () => {
     }
   };
 
-  const service = createHzlMrktOpsOrdersService({ channelOrders, healthCheckForChannel: stubHealthCheck });
+  const service = createHzlMrktOpsOrdersService({
+    channelOrders,
+    healthCheckForChannel: stubHealthCheck,
+    useOpsOrdersDb: false
+  });
   const params = new URLSearchParams({ days: '14' });
   const result = await service.listHzlMrktOpsOrders(params);
 
@@ -75,7 +79,11 @@ test('listHzlMrktOpsOrders respects channel filter', async () => {
     }
   };
 
-  const service = createHzlMrktOpsOrdersService({ channelOrders, healthCheckForChannel: stubHealthCheck });
+  const service = createHzlMrktOpsOrdersService({
+    channelOrders,
+    healthCheckForChannel: stubHealthCheck,
+    useOpsOrdersDb: false
+  });
   const params = new URLSearchParams({ days: '14', channel: 'uber-eats' });
   const result = await service.listHzlMrktOpsOrders(params);
 

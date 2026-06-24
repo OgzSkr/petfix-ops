@@ -106,7 +106,11 @@ function renderPreview(data) {
 
   const canSend = data.canSendRealSale ?? data.canSend;
   const summaryClass = canSend ? 'benimpos-summary benimpos-summary--ok' : 'benimpos-summary benimpos-summary--blocked';
-  const financialsHtml = renderFinancialSummary(data.financials);
+  const financialsHtml = renderFinancialSummary(data.financials, {
+    customerCharge: data.benimposSaleTotals?.customerCharge,
+    lineGross: data.benimposSaleTotals?.lineGross,
+    payload: data.payload
+  });
   const summaryHtml =
     `<div class="${summaryClass}">` +
       `<strong>${canSend ? 'Eşleştirme tamam — gönderime hazır' : 'Eşleştirme eksik — gönderim engelli'}</strong>` +
@@ -131,18 +135,25 @@ function renderPreview(data) {
   confirmBtn.textContent = canSend ? 'BenimPOS\'a Gönder' : 'Eşleştirme Tamamlanmadan Gönderilemez';
 }
 
-function renderFinancialSummary(financials) {
+function renderFinancialSummary(financials, preview) {
   if (!financials || !financials.grossAmount) return '';
-  return `<div class="benimpos-financials" aria-label="Uber finans özeti">
-    <strong>BenimPOS satış tutarı (Uber hakediş)</strong>
+  const lineGross = Number(preview?.lineGross ?? financials.grossAmount) || 0;
+  const customerCharge = Number(preview?.customerCharge ?? 0) || lineGross;
+  const discountRate = Number(preview?.payload?.data?.discountRate ?? 0) || 0;
+  const sellerDiscount = roundMoney(Math.max(0, lineGross - customerCharge));
+  return `<div class="benimpos-financials" aria-label="BenimPOS satış tutarı">
+    <strong>BenimPOS'a gidecek tutar</strong>
     <div class="benimpos-financials-grid">
-      <span>Brüt fiyat</span><strong>₺${formatMoney(financials.grossAmount)}</strong>
-      <span>Satıcı indirimi</span><strong class="is-deduct">−₺${formatMoney(financials.sellerDiscount)}</strong>
-      <span>Komisyon</span><strong class="is-deduct">−₺${formatMoney(financials.commissionAmount)}</strong>
-      <span>Net hakediş</span><strong class="is-net">₺${formatMoney(financials.netAmount)}</strong>
+      <span>Liste / satır toplamı</span><strong>₺${formatMoney(lineGross)}</strong>
+      <span>Kanal indirimi</span><strong class="is-deduct">−₺${formatMoney(sellerDiscount)}</strong>
+      <span>BenimPOS satış</span><strong class="is-net">₺${formatMoney(customerCharge)}</strong>
     </div>
-    <p class="muted benimpos-financials-note">Ürün satırları brüt fiyatla gider; indirim + komisyon BenimPOS <code>discountRate</code> (%${formatMoney(financials.discountRate)}) ile düşülür.</p>
+    <p class="muted benimpos-financials-note">Komisyon ve stopaj BenimPOS'a gönderilmez; kârlılık panel raporlarında görüntülenir.${discountRate > 0 ? ` İndirim oranı: %${formatMoney(discountRate)}.` : ''}</p>
   </div>`;
+}
+
+function roundMoney(value) {
+  return Math.round(Number(value || 0) * 100) / 100;
 }
 
 function renderPreviewRow(line, idx) {

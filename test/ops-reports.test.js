@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { resolveReportPeriod } from '../lib/ops-hub/reports/ops-reports-service.js';
-import { buildProfitFootnote, buildOpsReportsProfit } from '../lib/ops-hub/reports/ops-reports-profit.js';
+import { buildProfitFootnote, buildOpsReportsProfit, buildOpsOrderProfitabilityReport, resolveOrderProfitReportWindow } from '../lib/ops-hub/reports/ops-reports-profit.js';
 import { listOpsCustomers } from '../lib/ops-hub/customers/customer-index-service.js';
 import { ensureProductMatching } from '../lib/product-matching/schema.js';
 import { MAPPING_STATUS } from '../lib/product-matching/constants.js';
@@ -114,6 +114,45 @@ test('buildOpsReportsProfit uses hybrid matching for BenimPOS master costs', asy
   assert.equal(legacyProfit.confidence.missing_cost, 1);
   assert.ok(hybridProfit.productCost > 0, 'hybrid mode should resolve BenimPOS master cost');
   assert.ok(hybridProfit.totalProfit !== 0 || hybridProfit.ordersInKpi > 0);
+});
+
+test('buildOpsOrderProfitabilityReport returns pagination metadata', async () => {
+  const result = await buildOpsOrderProfitabilityReport(null, {
+    branchId: '',
+    since: null,
+    page: 2,
+    limit: 25
+  });
+  assert.equal(result.total, 0);
+  assert.equal(result.page, 1);
+  assert.equal(result.limit, 25);
+  assert.equal(result.totalPages, 1);
+  assert.deepEqual(result.rows, []);
+});
+
+test('resolveOrderProfitReportWindow maps all-records to max 30 days', async () => {
+  const window = await resolveOrderProfitReportWindow(null, {
+    branchId: 'branch-1',
+    range: 'all'
+  });
+  assert.equal(window.mode, 'days');
+  assert.equal(window.days, 30);
+  assert.equal(window.periodLabel, 'Son 30 gün');
+});
+
+test('resolveOrderProfitReportWindow caps preset days at 30', async () => {
+  const window = await resolveOrderProfitReportWindow(null, { days: 60 });
+  assert.equal(window.days, 30);
+  assert.equal(window.periodLabel, '30 gün');
+});
+
+test('resolveOrderProfitReportWindow rejects custom ranges over 30 days', async () => {
+  const window = await resolveOrderProfitReportWindow(null, {
+    startDate: '2026-01-01',
+    endDate: '2026-03-01'
+  });
+  assert.ok(window.error);
+  assert.match(window.error, /30 gün/);
 });
 
 test('listOpsCustomers returns meta with oldest order date', async () => {

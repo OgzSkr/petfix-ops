@@ -4,7 +4,7 @@ window.OpsCommon = (() => {
   const common = window.BuyBoxCommon;
 
   const CHANNEL_LABELS = {
-    trendyol_go: 'Trendyol Go',
+    trendyol_go: 'Uber',
     yemeksepeti: 'Yemeksepeti',
     getir: 'Getir'
   };

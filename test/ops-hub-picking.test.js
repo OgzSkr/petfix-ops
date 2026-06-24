@@ -4,7 +4,8 @@ import {
   findLineForBarcode,
   computePickingProgress,
   normalizeScanBarcode,
-  canDepotPickOrder
+  canDepotPickOrder,
+  mapStaffOrderListRow
 } from '../lib/ops-hub/picking/picking-service.js';
 
 const LINES = [
@@ -135,4 +136,31 @@ test('resolveCustomerOrderTotal prefers channel discounted total', async () => {
     ),
     3581
   );
+});
+
+test('mapStaffOrderListRow includes customer fields for completed list', () => {
+  const row = mapStaffOrderListRow({
+    id: 'ord-1',
+    channel: 'getir',
+    external_id: 'ext-1',
+    display_id: 'G-100',
+    status: 'completed',
+    channel_status: '900',
+    delivery_mode: 'platform_courier',
+    shadow_mode: false,
+    ordered_at: '2026-06-22T12:00:00Z',
+    completed_at: '2026-06-22T12:30:00Z',
+    updated_at: '2026-06-22T12:30:00Z',
+    picking_started_at: '2026-06-22T12:05:00Z',
+    picking_completed_at: '2026-06-22T12:15:00Z',
+    customer_masked: { name: 'Si*** G.', phone: '53******67' },
+    raw_payload: { customer: { name: 'Sinem G.' } },
+    line_total: 500,
+    line_count: 2,
+    total_item_qty: 3
+  });
+
+  assert.equal(row.displayId, 'G-100');
+  assert.equal(row.customerName, 'Sinem G.');
+  assert.ok(row.customerPhone);
 });

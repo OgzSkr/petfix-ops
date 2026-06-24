@@ -15,6 +15,19 @@ test('normalizeOrderLinePricingFields multiplies unit by qty for line gross', ()
   assert.equal(line.lineGrossAmount, 655);
 });
 
+test('normalizeOrderLinePricingFields multiplies unit by qty for line gross when gross equals unit', () => {
+  const line = normalizeOrderLinePricingFields({
+    barcode: '9003579008454',
+    quantity: 5,
+    lineUnitPrice: 90,
+    lineGrossAmount: 90,
+    paidLineGross: 90
+  });
+  assert.equal(line.lineUnitPrice, 90);
+  assert.equal(line.lineGrossAmount, 450);
+  assert.equal(line.paidLineGross, 90);
+});
+
 test('normalizeOrderLinePricingFields fixes line total stored as both unit and gross', () => {
   const line = normalizeOrderLinePricingFields({
     barcode: '6927749871088',

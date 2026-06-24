@@ -1381,6 +1381,486 @@
   gap: 16px;
 }
 
+.ops-analytics-grid--compact-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+@media (max-width: 1100px) {
+  .ops-analytics-grid--compact-3 {
+    grid-template-columns: 1fr;
+  }
+}
+
+.ops-panel--compact {
+  padding: 12px 14px;
+}
+
+.ops-panel-head--compact {
+  margin-bottom: 10px;
+}
+
+.ops-panel-head--compact h3 {
+  font-size: 0.88rem;
+}
+
+.ops-panel-head--compact .ops-panel-sub {
+  font-size: 0.72rem;
+}
+
+.ops-rank-list--compact {
+  min-height: 0;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.ops-rank-ol--compact {
+  gap: 6px;
+}
+
+.ops-rank-ol--compact li {
+  padding: 6px 8px;
+  grid-template-columns: 22px 1fr;
+  gap: 8px;
+}
+
+.ops-rank-ol--compact .ops-rank-index {
+  width: 20px;
+  height: 20px;
+  font-size: 0.68rem;
+}
+
+.ops-rank-ol--compact .ops-rank-title {
+  font-size: 0.76rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  display: block;
+}
+
+.ops-rank-ol--compact .ops-rank-content {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.ops-rank-ol--compact .ops-rank-meta {
+  font-size: 0.68rem;
+}
+
+.ops-panel--profit-report {
+  margin-top: 4px;
+}
+
+.ops-order-profit-wrap {
+  overflow-x: auto;
+}
+
+.ops-order-profit-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.84rem;
+}
+
+.ops-order-profit-table th,
+.ops-order-profit-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--ops-border);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.ops-order-profit-table th {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--ops-text-secondary);
+  background: #f8fafc;
+}
+
+.ops-order-profit-table .ops-money {
+  font-variant-numeric: tabular-nums;
+}
+
+.ops-order-profit-table .is-loss {
+  color: #b91c1c;
+  font-weight: 600;
+}
+
+.ops-order-profit-table .is-profit {
+  color: #15803d;
+  font-weight: 600;
+}
+
+.ops-profit-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  background: #eef2ff;
+  color: #3730a3;
+}
+
+.ops-panel--profit-link {
+  margin-top: 4px;
+}
+
+.ops-report-nav-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 4px 2px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.ops-report-nav-card:hover .ops-report-nav-card-arrow {
+  transform: translateX(4px);
+}
+
+.ops-report-nav-card-copy h3 {
+  margin: 0 0 6px;
+  font-size: 1rem;
+}
+
+.ops-report-nav-card-copy p {
+  margin: 0;
+  color: var(--ops-text-secondary);
+  font-size: 0.88rem;
+}
+
+.ops-report-nav-card-arrow {
+  font-size: 1.25rem;
+  color: var(--ops-text-secondary);
+  transition: transform 0.15s ease;
+}
+
+.ops-order-profit-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.ops-order-profit-panel,
+.ops-orders-panel {
+  padding: 0;
+  overflow: hidden;
+}
+
+.ops-order-profit-bar,
+.ops-orders-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 20px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--ops-border);
+  background: linear-gradient(180deg, #fafbfd 0%, #fff 100%);
+}
+
+.ops-order-profit-bar-main,
+.ops-orders-bar-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  min-width: 0;
+}
+
+.ops-order-profit-bar-side,
+.ops-orders-bar-side {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px 14px;
+}
+
+.ops-orders-bar .ops-orders-channel-nav,
+.ops-orders-bar .ops-orders-lifecycle-nav {
+  margin: 0;
+}
+
+.ops-orders-filter-inline {
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--ops-border);
+  background: #fff;
+  margin: 0;
+}
+
+.ops-orders-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px 14px;
+}
+
+.ops-orders-filter-field {
+  display: grid;
+  gap: 4px;
+  min-width: 118px;
+}
+
+.ops-orders-filter-field span {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--ops-text-secondary);
+}
+
+.ops-orders-filter-field select,
+.ops-orders-filter-field input[type="date"] {
+  min-height: 34px;
+  padding: 6px 10px;
+  border: 1px solid var(--ops-border);
+  border-radius: 8px;
+  font-size: 0.84rem;
+  background: #fff;
+}
+
+.ops-orders-filter-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-left: auto;
+}
+
+.ops-orders-panel .orders-toolbar {
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--ops-border);
+  background: #fff;
+}
+
+.ops-orders-panel .orders-table-wrap {
+  border: none;
+  border-radius: 0;
+}
+
+.ops-orders-panel .orders-footer {
+  padding: 12px 18px 16px;
+  border-top: 1px solid var(--ops-border);
+  background: #fafbfd;
+}
+
+.ops-orders-panel .orders-cache-banner,
+.ops-orders-panel .orders-sync-banner {
+  margin: 0;
+  border-radius: 0;
+  border-bottom: 1px solid var(--ops-border);
+}
+
+.ops-order-profit-channels {
+  margin: 0;
+}
+
+.ops-order-profit-period {
+  flex-shrink: 0;
+}
+
+.ops-order-profit-counts {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.ops-order-profit-count {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  border: 1px solid var(--ops-border);
+  font-size: 0.8rem;
+  color: var(--ops-text-secondary);
+  white-space: nowrap;
+}
+
+.ops-order-profit-count strong {
+  font-size: 0.95rem;
+  color: var(--ops-text-primary);
+}
+
+.ops-order-profit-count--muted {
+  background: #fff;
+}
+
+.ops-order-profit-note {
+  margin: 0;
+  padding: 8px 18px;
+  font-size: 0.8rem;
+  color: var(--ops-text-secondary);
+  border-bottom: 1px solid var(--ops-border);
+  background: #f8fafc;
+}
+
+.ops-order-profit-note:empty {
+  display: none;
+}
+
+.ops-back-link {
+  color: var(--ops-text-secondary);
+  text-decoration: none;
+  font-size: 0.82rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.ops-back-link:hover {
+  color: var(--ops-text-primary);
+}
+
+.ops-order-profit-filters {
+  border-bottom: 1px solid var(--ops-border);
+}
+
+.ops-order-profit-heading-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.ops-order-profit-heading {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: var(--ops-text-primary);
+  letter-spacing: -0.02em;
+}
+
+.ops-order-profit-filter-hint {
+  margin: 0;
+  padding: 0 18px 10px;
+  font-size: 0.76rem;
+  color: var(--ops-text-secondary);
+}
+
+.ops-order-profit-id-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ops-order-profit-channel {
+  flex: 0 0 auto;
+  line-height: 0;
+}
+
+.ops-order-profit-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--ops-border);
+}
+
+.ops-order-profit-total {
+  font-size: 0.82rem;
+}
+
+.ops-detail-lines-heading {
+  margin: 18px 0 8px;
+  font-size: 0.92rem;
+}
+
+.ops-detail-lines-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.84rem;
+}
+
+.ops-detail-lines-table th,
+.ops-detail-lines-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--ops-border);
+  text-align: left;
+}
+
+.orders-modal-backdrop:not(.open) {
+  display: none !important;
+}
+
+.ops-compact-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.ops-compact-page-panel {
+  padding: 0;
+  overflow: hidden;
+}
+
+.ops-compact-page-panel .ops-order-profit-note {
+  margin: 0;
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--ops-border);
+  background: #fff;
+  font-size: 0.82rem;
+  color: var(--ops-muted, #64748b);
+  line-height: 1.45;
+}
+
+.ops-compact-bar .ops-info-stack {
+  margin: 0;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ops-compact-stat-pills .ops-compact-stat-value--sm {
+  font-size: 0.92rem;
+}
+
+.ops-compact-bar-lead {
+  margin: 0;
+  font-size: 0.88rem;
+  color: var(--ops-muted, #64748b);
+  line-height: 1.45;
+}
+
+.ops-int-panel.ops-compact-page-panel .ops-int-grid {
+  padding: 0 18px 18px;
+}
+
+.ops-picking-queue {
+  padding: 14px 18px 18px;
+}
+
+.ops-picking-page .ops-empty-state {
+  margin: 0 18px 18px;
+}
+
+.ops-reports-toolbar-panel .ops-order-profit-note {
+  border-bottom: none;
+}
+
+@media (max-width: 980px) {
+  .ops-order-profit-bar,
+  .ops-orders-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .ops-order-profit-bar-side,
+  .ops-orders-bar-side {
+    justify-content: flex-start;
+  }
+
+  .ops-orders-filter-actions {
+    margin-left: 0;
+    width: 100%;
+  }
+}
+
 @media (max-width: 980px) {
   .ops-analytics-grid {
     grid-template-columns: 1fr;

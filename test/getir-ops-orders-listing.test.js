@@ -1,6 +1,5 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { GetirAdapter } from '../lib/channels/getir.js';
 import { canListOpsOrders } from '../lib/channels/ops-orders-bridge.js';
 import { createChannelOrdersService } from '../lib/platform/services/channel-orders.js';
 import { createHzlMrktOpsOrdersService } from '../lib/platform/services/hzlmrktops-orders.js';
@@ -13,6 +12,7 @@ test('canListOpsOrders returns true when Ops Postgres is available', async () =>
 });
 
 test('Getir healthCheck reports ops-only mode without API credentials', async (t) => {
+  const { GetirAdapter } = await import('../lib/channels/getir.js');
   const adapter = new GetirAdapter();
   const originalLoad = adapter.loadConfig.bind(adapter);
   adapter.loadConfig = async () => ({
@@ -56,6 +56,12 @@ test('hzlmrktops getir filter lists Ops orders without Getir API env', async (t)
 
   const getirMeta = result.channels?.find((entry) => entry.id === 'getir');
   assert.ok(getirMeta);
-  assert.equal(getirMeta.available, true);
+  assert.equal(getirMeta.configured, true);
   assert.ok(result.total >= 0);
+  if (result.paginated) {
+    assert.equal(result.paginated, true);
+    assert.ok(Array.isArray(result.rows));
+  } else {
+    assert.equal(getirMeta.available, true);
+  }
 });

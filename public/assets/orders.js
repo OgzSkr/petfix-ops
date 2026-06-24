@@ -161,6 +161,10 @@ let lastCacheMeta = { skipped: false, cooldownSeconds: 0, message: '' };
 let lastGetirSync = null;
 let ordersPageSize = 10;
 let ordersPage = 1;
+let serverPaginated = false;
+let ordersServerTotal = 0;
+let lifecycleCountsFromServer = null;
+let currentTableRows = [];
 let activeLifecycleTab = 'active';
 let lifecycleTabUserSelected = false;
 let opsActiveRefreshTimer = null;
@@ -436,7 +440,14 @@ function bindEvents() {
     updateOrdersHeroPeriodLabel();
     if (daysSelect.value !== 'custom') loadOrders();
   });
-  statusFilter.addEventListener('change', refreshView);
+  statusFilter.addEventListener('change', () => {
+    ordersPage = 1;
+    if (isOpsOrders && serverPaginated) {
+      loadOrders();
+      return;
+    }
+    refreshView();
+  });
   profitFilter?.addEventListener('change', () => {
     syncQuickFilterButtons();
     syncProfitQueryParam();
@@ -466,7 +477,7 @@ function bindEvents() {
       lifecycleTabUserSelected = true;
       setActiveLifecycleTab(btn.dataset.lifecycle || 'active');
       ordersPage = 1;
-      refreshView();
+      if (!serverPaginated) refreshView();
     });
   });
 
@@ -479,7 +490,10 @@ function bindEvents() {
   ordersSearch?.addEventListener('input', () => {
     ordersPage = 1;
     clearTimeout(ordersSearchTimer);
-    ordersSearchTimer = setTimeout(() => refreshView(), 200);
+    ordersSearchTimer = setTimeout(() => {
+      if (isOpsOrders && serverPaginated) loadOrders();
+      else refreshView();
+    }, 300);
   });
   lossProductsIssuesOnly?.addEventListener('change', renderLossProducts);
   lossProductsUnmapAllBtn?.addEventListener('click', unmapAllLossProducts);
@@ -693,6 +707,14 @@ function buildQueryParams() {
   if (isMultiChannel && activeChannelFilter !== 'all') {
     params.set('channel', activeChannelFilter);
   }
+  if (isOpsOrders) {
+    params.set('page', String(ordersPage));
+    params.set('limit', String(ordersPageSize || 25));
+    params.set('lifecycle', activeLifecycleTab);
+    const q = String(ordersSearch?.value || '').trim();
+    if (q) params.set('q', q);
+    if (statusFilter?.value) params.set('status', statusFilter.value);
+  }
   return params;
 }
 
@@ -901,7 +923,18 @@ async function loadOrders(forceRefresh = false, options = {}) {
     if (!response.ok) throw new Error(data.error || 'Yüklenemedi');
 
     allRows = data.rows || [];
-    fetchedCount = data.fetched ?? allRows.length;
+    serverPaginated = Boolean(data.paginated);
+    ordersServerTotal = serverPaginated
+      ? (Number(data.total) || 0)
+      : allRows.length;
+    lifecycleCountsFromServer = data.lifecycleCounts || null;
+    if (serverPaginated && Number(data.page) > 0) {
+      ordersPage = Number(data.page);
+    }
+    if (serverPaginated && Number(data.limit) > 0) {
+      ordersPageSize = Number(data.limit);
+    }
+    fetchedCount = data.fetched ?? (serverPaginated ? ordersServerTotal : allRows.length);
     lastHzlMrktOpsChannels = data.channels || null;
     lastDataQuality = data.dataQuality || null;
     lastOrderSources = data.orderSources || null;
@@ -1007,7 +1040,7 @@ function translateStatus(status) {
     Created: 'Oluşturuldu',
     Picking: 'Hazırlanıyor',
     Invoiced: 'Faturalandı',
-    Shipped: 'Kargoda',
+    Shipped: 'Yolda',
     Delivered: 'Teslim edildi',
     Cancelled: 'İptal',
     UnDelivered: 'Teslim edilemedi',
@@ -1073,7 +1106,7 @@ function translateConfidence(confidence) {
 }
 
 function refreshView(meta) {
-  ordersPage = 1;
+  if (!serverPaginated) ordersPage = 1;
   const rows = filteredRows();
   const dq = meta?.dataQuality ?? lastDataQuality;
   if (!isOpsOrders) {
@@ -1183,8 +1216,12 @@ function updateOrdersHeroPeriodLabel() {
 
 function updateLifecycleTabCounts() {
   if (!isOpsOrders) return;
-  const activeCount = countLifecycleRows('active');
-  const completedCount = countLifecycleRows('completed');
+  const activeCount = serverPaginated && lifecycleCountsFromServer
+    ? Number(lifecycleCountsFromServer.active) || 0
+    : countLifecycleRows('active');
+  const completedCount = serverPaginated && lifecycleCountsFromServer
+    ? Number(lifecycleCountsFromServer.completed) || 0
+    : countLifecycleRows('completed');
   const activeEl = document.getElementById('lifecycleCountActive');
   const completedEl = document.getElementById('lifecycleCountCompleted');
   if (activeEl) activeEl.textContent = activeCount ? '(' + activeCount + ')' : '';
@@ -1205,6 +1242,10 @@ function setActiveLifecycleTab(lifecycle) {
   });
   updateOrdersListHeading();
   restartOpsActiveAutoRefresh();
+  if (serverPaginated) {
+    ordersPage = 1;
+    loadOrders();
+  }
 }
 
 function restartOpsActiveAutoRefresh() {
@@ -1220,9 +1261,14 @@ function restartOpsActiveAutoRefresh() {
 }
 
 function pickLifecycleTabAfterLoad() {
-  if (!isOpsOrders || !allRows.length || lifecycleTabUserSelected) return;
-  const activeCount = countLifecycleRows('active');
-  const completedCount = countLifecycleRows('completed');
+  if (!isOpsOrders || lifecycleTabUserSelected) return;
+  const activeCount = serverPaginated && lifecycleCountsFromServer
+    ? Number(lifecycleCountsFromServer.active) || 0
+    : countLifecycleRows('active');
+  const completedCount = serverPaginated && lifecycleCountsFromServer
+    ? Number(lifecycleCountsFromServer.completed) || 0
+    : countLifecycleRows('completed');
+  if (!allRows.length && !ordersServerTotal) return;
   if (activeCount === 0 && completedCount > 0) {
     setActiveLifecycleTab('completed');
     return;
@@ -1933,22 +1979,30 @@ function renderOrdersPagination(total) {
   document.getElementById('ordersPageSizeSelect')?.addEventListener('change', (e) => {
     ordersPageSize = Number(e.target.value) || 0;
     ordersPage = 1;
-    renderTable();
+    if (serverPaginated) loadOrders();
+    else renderTable();
   });
   document.getElementById('ordersPagePrev')?.addEventListener('click', () => {
     if (ordersPage > 1) {
       ordersPage -= 1;
-      renderTable();
+      if (serverPaginated) loadOrders();
+      else renderTable();
     }
   });
   document.getElementById('ordersPageNext')?.addEventListener('click', () => {
-    ordersPage += 1;
-    renderTable();
+    const totalPages = ordersPageSize === 0 ? 1 : Math.max(1, Math.ceil((serverPaginated ? ordersServerTotal : total) / ordersPageSize));
+    if (ordersPage < totalPages) {
+      ordersPage += 1;
+      if (serverPaginated) loadOrders();
+      else renderTable();
+    }
   });
 }
 
 function renderTable() {
-  const rows = sortedRows(filteredRows());
+  const rows = serverPaginated
+    ? sortedRows(allRows)
+    : sortedRows(filteredRows());
 
   document.querySelectorAll('.orders-table th[data-sort]').forEach((th) => {
     th.classList.toggle('sorted', th.dataset.sort === sortKey);
@@ -1957,7 +2011,7 @@ function renderTable() {
   });
 
   if (!rows.length) {
-    renderOrdersPagination(0);
+    renderOrdersPagination(serverPaginated ? ordersServerTotal : 0);
     const hasActiveFilter = (statusFilter && statusFilter.value) ||
       (ordersSearch && String(ordersSearch.value || '').trim()) ||
       (isOpsOrders && activeLifecycleTab === 'active' && countLifecycleRows('completed') > 0) ||
@@ -1981,10 +2035,14 @@ function renderTable() {
     return;
   }
 
-  const totalPages = ordersPageSize === 0 ? 1 : Math.max(1, Math.ceil(rows.length / ordersPageSize));
+  const paginationTotal = serverPaginated ? ordersServerTotal : rows.length;
+  const totalPages = ordersPageSize === 0 ? 1 : Math.max(1, Math.ceil(paginationTotal / ordersPageSize));
   if (ordersPage > totalPages) ordersPage = totalPages;
   const startIndex = ordersPageSize === 0 ? 0 : (ordersPage - 1) * ordersPageSize;
-  const pageRows = ordersPageSize === 0 ? rows : rows.slice(startIndex, startIndex + ordersPageSize);
+  const pageRows = serverPaginated
+    ? rows
+    : (ordersPageSize === 0 ? rows : rows.slice(startIndex, startIndex + ordersPageSize));
+  currentTableRows = pageRows;
 
   // data-detail global (sıralı liste) indeksi taşır — openDetail tüm listede arar.
   tableBody.innerHTML = pageRows.map((row, index) =>
@@ -1999,7 +2057,7 @@ function renderTable() {
   tableBody.querySelectorAll('[data-invoice]').forEach((btn) => {
     btn.addEventListener('click', () => showToast('Fatura işlemi BenimPOS üzerinden yapılır.'));
   });
-  renderOrdersPagination(rows.length);
+  renderOrdersPagination(paginationTotal);
 }
 
 function renderOpsRow(row, index) {
@@ -2121,13 +2179,13 @@ function openDetail(index) {
       detailItem('Ürün maliyeti', '₺' + formatMoney(row.productCost)) +
       detailItem('Ek maliyet', '₺' + formatMoney(row.extraCost)) +
       detailItem('Komisyon', '₺' + formatMoney(row.commissionAmount)) +
-      detailItem('Kargo', formatShippingCostLabel(row)) +
+      detailItem('Kurye ücreti', formatShippingCostLabel(row)) +
       detailItem('Hizmet bedeli', '₺' + formatMoney(row.serviceFee)) +
       detailItem('Stopaj', '₺' + formatMoney(row.stopajAmount)) +
       detailItem('Satış KDV', '₺' + formatMoney(row.salesVat)) +
       detailItem('Alış KDV', '₺' + formatMoney(row.purchaseVat)) +
       detailItem('Komisyon KDV', '₺' + formatMoney(row.commissionVat)) +
-      detailItem('Kargo KDV', '₺' + formatMoney(row.shippingVat)) +
+      detailItem('Kurye KDV', '₺' + formatMoney(row.shippingVat)) +
       detailItem('Hizmet KDV', '₺' + formatMoney(row.serviceFeeVat)) +
       detailItem('Net ödenecek KDV', '₺' + formatMoney(row.payableVat)) +
       (row.carriedForwardVat > 0 ? detailItem('Devreden KDV', '₺' + formatMoney(row.carriedForwardVat)) : '') +
@@ -2148,7 +2206,7 @@ function openDetail(index) {
         '<span class="muted detail-actions-note">Önce eşleştirme ön izlemesi — onaylı eşleştirmeler satışa gider.</span></div>'
       : '');
 
-  modalBackdrop.classList.add('open');
+  showOrderModal();
 
   if (bootstrap.benimposSaleEnabled) {
     document.getElementById('benimposPreviewBtn')?.addEventListener('click', () => {
@@ -2162,8 +2220,7 @@ function openDetail(index) {
 }
 
 function openOpsDetail(index) {
-  const rows = sortedRows(filteredRows());
-  const row = rows[index];
+  const row = currentTableRows[index];
   if (!row) return;
 
   modalTitle.textContent = 'Sipariş Detayı';
@@ -2216,7 +2273,7 @@ function openOpsDetail(index) {
       '</div>' +
     '</div>';
 
-  modalBackdrop.classList.add('open');
+  showOrderModal();
   bindOpsOrderDetailActions(row);
 }
 
@@ -2830,8 +2887,17 @@ function detailItem(label, value) {
 }
 
 function closeModal() {
-  modalBackdrop.classList.remove('open');
+  if (modalBackdrop) {
+    modalBackdrop.classList.remove('open');
+    modalBackdrop.hidden = true;
+  }
   syncOrderQueryParam('');
+}
+
+function showOrderModal() {
+  if (!modalBackdrop) return;
+  modalBackdrop.hidden = false;
+  modalBackdrop.classList.add('open');
 }
 
 function handleBenimposSaleSuccess(detail) {

@@ -39,7 +39,7 @@ test('summarizeUberOrderFinancials matches Uber portal settlement totals', () =>
   assert.ok(financials.discountRate > 28.32 && financials.discountRate < 28.33);
 });
 
-test('applyUberBenimposFinancials sets discountRate and note on payload', () => {
+test('applyUberBenimposFinancials sets customer discount only (no commission in BenimPOS)', () => {
   const payload = buildSalesCreatePayload({
     paymentType: '27749256',
     note: 'TRENDGO #11321986580',
@@ -58,11 +58,11 @@ test('applyUberBenimposFinancials sets discountRate and note on payload', () => 
     }]
   };
 
-  const { payload: adjusted, financials } = applyUberBenimposFinancials(payload, orderPackage);
-  assert.ok(adjusted.data.discountRate > 0);
-  assert.match(adjusted.data.note, /Kom: 279,07/);
-  assert.match(adjusted.data.note, /Net: 895,93 TL/);
-  assert.equal(adjusted.data.customerCode, undefined);
+  const { payload: adjusted, financials, customerCharge } = applyUberBenimposFinancials(payload, orderPackage);
+  assert.ok(Math.abs(adjusted.data.discountRate - 6) < 0.05);
+  assert.equal(adjusted.data.note, 'TRENDGO #11321986580');
+  assert.doesNotMatch(adjusted.data.note, /Kom:/);
+  assert.equal(customerCharge, 1175);
   assert.equal(financials.netAmount, 895.93);
 });
 
@@ -109,9 +109,10 @@ test('buildChannelSaleFromOrder attaches uber financials for settlement orders',
   }, db, { channelId: 'uber-eats', salePolicy: 'sale-strict' });
 
   assert.ok(built.financials);
-  assert.equal(built.payload.data.discountRate, built.financials.discountRate);
+  assert.ok(Math.abs(built.payload.data.discountRate - 6) < 0.05);
   assert.equal(built.payload.data.customerCode, undefined);
   assert.match(built.payload.data.note, /^Uber Eats #11321986580/);
+  assert.ok(Math.abs(built.benimposSaleTotals.customerCharge - 1175) < 0.01);
   assert.ok(Math.abs(built.financials.netAmount - 895.93) < 0.01);
 });
 

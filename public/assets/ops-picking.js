@@ -276,7 +276,7 @@ channelAcceptBtn.addEventListener('click', () =>
         method: 'POST',
         body: JSON.stringify({})
       });
-      ops.showToast(data.dryRun ? 'Kabul simüle edildi' : 'Kanala kabul bildirildi');
+      ops.showToast(data.dryRun ? 'Kabul simüle edildi' : (data.notify?.successMessage || 'Kanala kabul bildirildi'));
       await refreshOrder();
     }
   })
@@ -291,7 +291,11 @@ channelReadyBtn.addEventListener('click', () =>
         method: 'POST',
         body: JSON.stringify({})
       });
-      ops.showToast(data.dryRun ? 'Hazır simüle edildi' : 'Kanala hazır bildirildi');
+      ops.showToast(
+        data.dryRun
+          ? 'Hazır simüle edildi'
+          : (data.notify?.successMessage || 'Kanala hazır bildirildi')
+      );
       await refreshOrder();
     }
   })

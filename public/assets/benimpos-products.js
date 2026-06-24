@@ -70,7 +70,9 @@
     syncStatus: '',
     stock: '',
     matchStatus: 'action',
-    confirmableOnly: ''
+    confirmableOnly: '',
+    sort: 'name',
+    sortDir: 'asc'
   };
 
   const els = {};
@@ -174,9 +176,74 @@
     return { text: String(Math.round(n)), cls: 'is-in' };
   }
 
-  function renderPosStockCell(stock) {
+  function renderStockBadge(stock) {
     const { text, cls } = formatPosStock(stock);
-    return `<td class="bp-num bp-pos-stock ${cls}">${esc(text)}</td>`;
+    return `<span class="bp-stock-pill ${cls}" title="Kasa stoku">${esc(text)}</span>`;
+  }
+
+  function renderChannelCardThumb(cp, mappingDetail, fallbackBarcode) {
+    const imageUrl = String(cp?.channelImageUrl || '').trim();
+    if (imageUrl) {
+      return `<img class="bp-channel-card-thumb" src="${escAttr(imageUrl)}" alt="" width="40" height="40" loading="lazy" onerror="this.classList.add('bp-channel-card-thumb--empty'); this.removeAttribute('src');">`;
+    }
+    const barcode = String(fallbackBarcode || mappingDetail?.channelBarcode || cp?.channelSku || '').trim();
+    if (barcode) {
+      return `<img class="bp-channel-card-thumb" src="/api/product-thumb-img?barcode=${escAttr(barcode)}" alt="" width="40" height="40" loading="lazy" onerror="this.classList.add('bp-channel-card-thumb--empty'); this.removeAttribute('src');">`;
+    }
+    return '<span class="bp-channel-card-thumb bp-channel-card-thumb--empty" aria-hidden="true"></span>';
+  }
+
+  function renderSaleBadge(onSale, canPush, channelId, barcode) {
+    const label = onSale ? 'Satışta' : 'Stok Yok';
+    const cls = onSale ? 'is-on' : 'is-off';
+    const title = canPush
+      ? (onSale ? 'Satışta — stok gönder' : 'Satışta değil — stok gönder')
+      : label;
+    if (canPush) {
+      return `<button type="button" class="bp-sale-badge ${cls} is-clickable" data-stock-push="${escAttr(channelId)}" data-barcode="${escAttr(barcode)}" title="${escAttr(title)}" aria-label="${escAttr(title)}">${esc(label)}</button>`;
+    }
+    return `<span class="bp-sale-badge ${cls}">${esc(label)}</span>`;
+  }
+
+  function formatSyncInterval(minutes) {
+    const n = Number(minutes);
+    if (!Number.isFinite(n) || n <= 0) return '—';
+    if (n >= 1440 && n % 1440 === 0) {
+      const days = n / 1440;
+      return days === 1 ? 'günde 1 kez' : `${days} günde bir`;
+    }
+    if (n >= 60 && n % 60 === 0) {
+      const hours = n / 60;
+      return hours === 1 ? 'saatte 1 kez' : `${hours} saatte bir`;
+    }
+    return `${n} dakikada bir`;
+  }
+
+  function formatSyncChannels(channels) {
+    const labels = (channels || []).map((id) => channelLabel(id));
+    return labels.length ? labels.join(', ') : 'Getir, Yemeksepeti, Trendyol GO';
+  }
+
+  async function loadSyncScheduleInfo() {
+    const target = document.getElementById('bpSyncScheduleLine');
+    if (!target) return;
+    try {
+      const response = await authFetch('/api/product-matching/sync-schedule');
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || 'schedule');
+      const settings = data.settings || data;
+      const enabled = Boolean(settings.enabled);
+      const interval = formatSyncInterval(settings.intervalMinutes);
+      const channels = formatSyncChannels(settings.channels);
+      const lastRun = settings.lastRunAt
+        ? new Date(settings.lastRunAt).toLocaleString('tr-TR')
+        : 'henüz çalışmadı';
+      target.innerHTML = enabled
+        ? `<strong>Otomatik katalog yenileme açık.</strong> ${esc(interval)} — kanallar: ${esc(channels)}. Son çalışma: ${esc(lastRun)}.`
+        : `<strong>Otomatik katalog yenileme kapalı.</strong> Listeler yalnızca üstteki manuel butonlarla veya Sistem sayfasından açılan zamanlayıcı ile güncellenir.`;
+    } catch {
+      target.textContent = 'Otomatik senkron durumu okunamadı — manuel «Listeleri güncelle» butonlarını kullanabilirsiniz.';
+    }
   }
 
   function setStatus(text, tone) {
@@ -440,8 +507,6 @@
       return '<td class="bp-col-channel bp-channel-cell"><span class="bp-channel-empty">—</span></td>';
     }
     const onSale = isChannelOnSale(cp);
-    const saleClass = onSale ? 'is-on' : 'is-off';
-    const saleTitle = onSale ? 'Satışta — stok gönder' : 'Satışta değil — stok gönder';
     const diff = formatDiffPct(cp?.saleDiffPct);
     const barcode = String(row.benimposBarcode || '').trim();
     const canPush = Boolean(channel.pushChannel);
@@ -449,6 +514,8 @@
     const channelProductId = String(cp?.channelProductId || mappingDetail?.channelProductId || '').trim();
     const channelPrice = cp?.channelPrice ?? mappingDetail?.channelSalePrice ?? null;
     const canUnmap = canRemoveChannelMapping(cp, mappingDetail);
+    const channelName = String(cp?.channelName || mappingDetail?.channelName || '').trim();
+    const channelSku = String(cp?.channelSku || mappingDetail?.channelBarcode || channelProductId || '').trim();
     const dupBadge = dupGroup
       ? `<span class="bp-channel-dup-badge" title="${escAttr(duplicateMappingTitle(dupGroup))}">×${esc(dupGroup.count)}</span>`
       : '';
@@ -456,11 +523,22 @@
       ? `<button type="button" class="bp-unmap-btn" data-unmap-channel="${escAttr(channel.id)}" data-unmap-barcode="${escAttr(barcode)}" data-channel-product="${escAttr(channelProductId)}" title="${escAttr(channelLabel(channel.id))} eşleştirmesini kaldır" aria-label="Eşleştirmeyi kaldır">Kaldır</button>`
       : (cp?.barcodeMatchOnly ? '<div class="bp-channel-link-hint">Kayıtlı eşleştirme yok</div>' : '');
     return `<td class="bp-col-channel bp-channel-cell">
-      <button type="button" class="bp-channel-price${canPush ? ' is-clickable' : ''}" ${canPush ? `data-price-push="${escAttr(channel.id)}" data-barcode="${escAttr(barcode)}"` : ''} title="${escAttr(priceTitle)}">${formatMoney(channelPrice)}</button>
-      ${dupBadge}
-      <button type="button" class="bp-sale-indicator ${saleClass}${canPush ? ' is-clickable' : ''}" ${canPush ? `data-stock-push="${escAttr(channel.id)}" data-barcode="${escAttr(barcode)}"` : ''} title="${escAttr(canPush ? saleTitle : (onSale ? 'Satışta' : 'Satışta değil'))}" aria-label="${escAttr(canPush ? saleTitle : (onSale ? 'Satışta' : 'Satışta değil'))}"></button>
-      ${unmapBtn}
-      <div class="bp-channel-diff ${diff.cls}">${esc(diff.text)}</div>
+      <div class="bp-channel-card">
+        <div class="bp-channel-card-top">
+          ${renderSaleBadge(onSale, canPush, channel.id, barcode)}
+          <button type="button" class="bp-channel-price${canPush ? ' is-clickable' : ''}" ${canPush ? `data-price-push="${escAttr(channel.id)}" data-barcode="${escAttr(barcode)}"` : ''} title="${escAttr(priceTitle)}">${formatMoney(channelPrice)}</button>
+          ${dupBadge}
+        </div>
+        <div class="bp-channel-card-body">
+          ${renderChannelCardThumb(cp, mappingDetail, barcode)}
+          <div class="bp-channel-card-copy">
+            <div class="bp-channel-card-name">${esc(channelName || '—')}</div>
+            ${channelSku ? `<div class="bp-channel-card-sku">SKU: ${esc(channelSku)}</div>` : ''}
+          </div>
+        </div>
+        <div class="bp-channel-diff ${diff.cls}">${esc(diff.text)}</div>
+        ${unmapBtn}
+      </div>
     </td>`;
   }
 
@@ -482,24 +560,23 @@
       const barcode = String(row.benimposBarcode || '').trim();
       const brand = String(row.brand || '').trim();
       const category = String(row.categoryName || '').trim();
-      const meta = [brand, category].filter(Boolean).join(' • ');
+      const meta = brand
+        ? `Marka: ${brand}${category ? ` · ${category}` : ''}`
+        : category;
       const checked = selected.has(barcode) ? ' checked' : '';
-      const autoStockChecked = row.autoStockSync !== false ? ' checked' : '';
 
       return `<tr data-barcode="${escAttr(barcode)}" data-id="${escAttr(row.id)}" class="${selected.has(barcode) ? 'is-selected' : ''}">
-        <td class="bp-col-check"><input type="checkbox" class="bp-row-check" data-barcode="${escAttr(barcode)}" aria-label="Seç"${checked}></td>
-        <td class="bp-col-auto-stock">
-          <input type="checkbox" class="bp-auto-stock-check" data-master-id="${escAttr(row.id)}" data-barcode="${escAttr(barcode)}" aria-label="Otomatik stok gönder"${autoStockChecked} title="BenimPOS stok değişince kanallara otomatik gönder">
-        </td>
         <td class="bp-col-product">
           <div class="bp-product-cell">
+            <input type="checkbox" class="pf-checkbox bp-row-check" data-barcode="${escAttr(barcode)}" aria-label="Seç"${checked}>
             ${renderProductThumb(barcode)}
-            <div>
+            <div class="bp-product-copy">
               <div class="bp-product-name">${esc(row.name || '—')}</div>
               ${renderDuplicateMappingBadge(row)}
               <div class="bp-code-stack bp-code-stack--compact">
                 <span class="bp-barcode bp-barcode--sub">
                   <span>${esc(barcode || '—')}</span>
+                  ${renderStockBadge(row.stock)}
                   ${barcode ? `<button type="button" class="bp-copy-btn" data-copy-barcode="${escAttr(barcode)}" title="Kopyala">⧉</button>` : ''}
                 </span>
               </div>
@@ -507,19 +584,17 @@
             </div>
           </div>
         </td>
-        ${renderPosStockCell(row.stock)}
         <td class="bp-num bp-pos-price">${formatMoney(row.salePrice1)}</td>
         ${DISPLAY_CHANNELS.map((channel) => renderChannelCell(row, channel)).join('')}
       </tr>`;
     }).join('');
 
     syncSelectAllState();
-    syncAutoStockSelectAllState();
     updateSelectionToolbar();
   }
 
   function tableColspan() {
-    return isMatchingView() ? 7 : 8;
+    return isMatchingView() ? 7 : 5;
   }
 
   function channelLabel(channelId) {
@@ -591,13 +666,12 @@
       return;
     }
     els.tableHead.innerHTML = `<tr>
-      <th class="bp-col-check" scope="col"><input type="checkbox" id="bpSelectAll" aria-label="Tümünü seç"></th>
-      <th class="bp-col-auto-stock" scope="col" title="BenimPOS stok değişince kanallara otomatik gönder">
-        <input type="checkbox" id="bpAutoStockSelectAll" aria-label="Sayfadaki tüm ürünlerde otomatik stok">
-        <span class="bp-col-auto-stock-label">Otom. stok</span>
+      <th class="bp-col-product" scope="col">
+        <div class="bp-product-head">
+          <input type="checkbox" class="pf-checkbox" id="bpSelectAll" aria-label="Tümünü seç">
+          <span>Ürün Bilgisi</span>
+        </div>
       </th>
-      <th class="bp-col-product" scope="col">Ürün</th>
-      <th scope="col">Kasa stok</th>
       <th scope="col">Kasa satış</th>
       ${DISPLAY_CHANNELS.map((ch) => {
         const logo = window.PetFixChannelLogos?.render
@@ -607,9 +681,8 @@
       }).join('')}
     </tr>`;
     els.selectAll = document.getElementById('bpSelectAll');
-    els.autoStockSelectAll = document.getElementById('bpAutoStockSelectAll');
+    els.autoStockSelectAll = null;
     els.selectAll?.addEventListener('change', onSelectAllChange);
-    els.autoStockSelectAll?.addEventListener('change', onAutoStockSelectAllChange);
   }
 
   function syncAutoStockSelectAllState() {
@@ -1036,8 +1109,8 @@
     const params = new URLSearchParams({
       page: String(page),
       limit: String(limit),
-      sort: 'name',
-      sortDir: 'asc'
+      sort: state.sort || 'name',
+      sortDir: state.sortDir || 'asc'
     });
     if (state.q) params.set('q', state.q);
     if (state.brand) params.set('brand', state.brand);
@@ -1048,7 +1121,23 @@
     }
     if (state.stock === 'in') params.set('stock', 'in');
     if (state.stock === 'out') params.set('stock', 'out');
+    if (state.sort && state.sort !== 'name') params.set('sort', state.sort);
+    if (state.sortDir && state.sortDir !== 'asc') params.set('sortDir', state.sortDir);
     return params;
+  }
+
+  function parseSortValue(raw) {
+    const value = String(raw || 'name:asc').trim();
+    const [sort, sortDir] = value.split(':');
+    const allowed = new Set(['name', 'stock', 'priceDiff', 'maxPriceDiff', 'cost', 'updated']);
+    return {
+      sort: allowed.has(sort) ? sort : 'name',
+      sortDir: sortDir === 'desc' ? 'desc' : 'asc'
+    };
+  }
+
+  function sortSelectValue() {
+    return `${state.sort || 'name'}:${state.sortDir || 'asc'}`;
   }
 
   function activeFilterCount() {
@@ -1073,6 +1162,8 @@
       if (state.channelSaleStatus) params.set('channelSale', state.channelSaleStatus);
       if (state.syncStatus) params.set('status', state.syncStatus);
       if (state.stock) params.set('stock', state.stock);
+      if (state.sort && state.sort !== 'name') params.set('sort', state.sort);
+      if (state.sortDir && state.sortDir !== 'asc') params.set('sortDir', state.sortDir);
     } else {
       if (state.matchStatus && state.matchStatus !== 'action') params.set('matchStatus', state.matchStatus);
       if (state.confirmableOnly === '1') params.set('confirmable', '1');
@@ -1100,6 +1191,11 @@
       ? normalizeMatchingMatchStatus(urlMatchStatus)
       : '';
     state.confirmableOnly = params.get('confirmable') === '1' ? '1' : '';
+    const parsedSort = parseSortValue(params.get('sort') && params.get('sortDir')
+      ? `${params.get('sort')}:${params.get('sortDir')}`
+      : (params.get('sort') || 'name:asc'));
+    state.sort = parsedSort.sort;
+    state.sortDir = parsedSort.sortDir;
     page = Math.max(1, Number(params.get('page')) || 1);
     limit = Math.max(10, Number(params.get('limit')) || 20);
   }
@@ -1116,6 +1212,7 @@
     if (els.matchStatus) els.matchStatus.value = state.matchStatus || 'action';
     if (els.confirmable) els.confirmable.value = state.confirmableOnly;
     if (els.stock) els.stock.value = state.stock;
+    if (els.sort) els.sort.value = sortSelectValue();
     if (els.pageSize) els.pageSize.value = String(limit);
   }
 
@@ -1155,6 +1252,12 @@
     if (poolTotal != null) parts.push(`Havuz: ${Number(poolTotal).toLocaleString('tr-TR')} ürün`);
     if (total != null) parts.push(`Sonuç: ${Number(total).toLocaleString('tr-TR')}`);
     if (active) parts.push(`${active} filtre aktif`);
+    if (state.sort === 'priceDiff') {
+      const ch = state.channelFocus ? channelLabel(state.channelFocus) : 'Getir';
+      parts.push(`Fiyat farkı sıralaması: ${ch}`);
+    } else if (state.sort === 'maxPriceDiff') {
+      parts.push('Sıralama: en büyük kanal farkı');
+    }
     els.filterSummary.textContent = parts.join(' · ');
   }
 
@@ -1167,6 +1270,8 @@
     state.stock = '';
     state.matchStatus = 'action';
     state.confirmableOnly = '';
+    state.sort = 'name';
+    state.sortDir = 'asc';
     page = 1;
     applyFiltersToControls();
     syncFiltersToUrl();
@@ -1182,6 +1287,9 @@
     state.matchStatus = normalizeMatchingMatchStatus(els.matchStatus?.value || 'action');
     state.confirmableOnly = String(els.confirmable?.value || '').trim();
     state.stock = String(els.stock?.value || '').trim();
+    const parsedSort = parseSortValue(els.sort?.value || 'name:asc');
+    state.sort = parsedSort.sort;
+    state.sortDir = parsedSort.sortDir;
   }
 
   function applyFilters() {
@@ -1217,7 +1325,18 @@
       }
 
       const response = await authFetch(`/api/product-matching/master-products?${buildQueryParams()}`);
-      const data = await response.json();
+      const contentType = String(response.headers.get('content-type') || '').toLowerCase();
+      let data;
+      if (contentType.includes('application/json')) {
+        data = await response.json();
+      } else {
+        const snippet = (await response.text()).replace(/\s+/g, ' ').slice(0, 120);
+        throw new Error(
+          response.status >= 500 || response.status === 504
+            ? `Sunucu yanıt vermedi (HTTP ${response.status}). Filtre çok geniş olabilir; biraz bekleyip tekrar deneyin.`
+            : `Beklenmeyen sunucu yanıtı (HTTP ${response.status}): ${snippet}`
+        );
+      }
       if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
 
       total = Number(data.total) || 0;
@@ -1732,6 +1851,7 @@
     els.matchStatus = document.getElementById('bpFilterMatchStatus');
     els.confirmable = document.getElementById('bpFilterConfirmable');
     els.stock = document.getElementById('bpFilterStock');
+    els.sort = document.getElementById('bpFilterSort');
     els.filterSummary = document.getElementById('bpFilterSummary');
     els.matchingToolbar = document.getElementById('bpMatchingToolbar');
     els.matchingToolbarHint = document.getElementById('bpMatchingToolbarHint');
@@ -1800,13 +1920,17 @@
     document.getElementById('bpViewMatching')?.addEventListener('click', () => setViewMode('matching'));
     document.getElementById('bpViewOrphans')?.addEventListener('click', () => setViewMode('matching'));
 
-    els.channel?.addEventListener('change', (event) => {
-      const channelFocus = String(event.target.value || '').trim();
+    els.sort?.addEventListener('change', () => applyFilters());
+
+    els.channel?.addEventListener('change', () => {
       if (els.channelSale) {
-        els.channelSale.disabled = !channelFocus;
-        if (!channelFocus) els.channelSale.value = '';
+        els.channelSale.disabled = !String(els.channel?.value || '').trim();
+        if (!els.channel?.value) els.channelSale.value = '';
       }
+      applyFilters();
     });
+
+    els.channelSale?.addEventListener('change', () => applyFilters());
 
     els.pageSize?.addEventListener('change', () => {
       readFiltersFromControls();
@@ -1927,8 +2051,9 @@
     setFilterPanelMode();
     updateTableHead();
     applyFiltersToControls();
-    loadCleanupSuggestions();
+    loadSyncScheduleInfo();
     loadProducts();
+    window.setTimeout(() => loadCleanupSuggestions(), 0);
     window.onPanelRefresh = () => loadProducts({ silent: true });
   }
 

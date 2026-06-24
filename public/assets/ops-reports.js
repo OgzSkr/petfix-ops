@@ -221,14 +221,15 @@ function renderHeatmap(cells = []) {
   container.innerHTML = `<div class="ops-heatmap-wrap"><div class="ops-heatmap-hours">${hoursHeader}</div>${rows}</div>`;
 }
 
-function renderRankList(containerId, items = [], emptyText = 'Veri yok.') {
+function renderRankList(containerId, items = [], emptyText = 'Veri yok.', maxItems = 5) {
   const container = getEl(containerId);
   if (!container) return;
-  if (!items.length) {
+  const slice = (items || []).slice(0, maxItems);
+  if (!slice.length) {
     container.innerHTML = renderEmptyState(emptyText);
     return;
   }
-  container.innerHTML = `<ol class="ops-rank-ol">${items.map((row, index) => {
+  container.innerHTML = `<ol class="ops-rank-ol ops-rank-ol--compact">${slice.map((row, index) => {
     const title = row.title || row.barcode || '—';
     const meta = row.quantity != null
       ? `${row.quantity} adet · ${formatMoney(row.revenue || 0)}`
@@ -236,7 +237,7 @@ function renderRankList(containerId, items = [], emptyText = 'Veri yok.') {
     return `<li>
       <span class="ops-rank-index">${index + 1}</span>
       <div class="ops-rank-content">
-        <span class="ops-rank-title">${esc(title)}</span>
+        <span class="ops-rank-title" title="${esc(title)}">${esc(title)}</span>
         <span class="ops-rank-meta">${esc(meta)}</span>
       </div>
     </li>`;
@@ -288,7 +289,7 @@ async function loadReports() {
     renderHeatmap(data.heatmap || []);
     renderRankList('topProducts', data.topProducts || []);
     renderRankList('leastProducts', data.leastProducts || []);
-    renderRankList('neverSold', data.neverSold || [], 'Tüm eşleşmiş ürünler en az bir kez satılmış görünüyor.');
+    renderRankList('neverSold', data.neverSold || [], 'Tüm eşleşmiş ürünler en az bir kez satılmış görünüyor.', 8);
     if (note) note.textContent = data.note || '';
   } catch (err) {
     if (note) note.textContent = err.message || 'Rapor yüklenemedi';
