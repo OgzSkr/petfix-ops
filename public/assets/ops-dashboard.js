@@ -79,6 +79,59 @@ function setKpiLoading(active) {
   });
 }
 
+function renderParityBanner(parity) {
+  const banner = getEl('dashboardParityBanner');
+  if (!banner) return;
+  if (!parity?.active) {
+    banner.hidden = true;
+    banner.textContent = '';
+    return;
+  }
+  banner.hidden = false;
+  const mismatches = (parity.mismatches || [])
+    .slice(0, 3)
+    .map((row) => `${row.table || row.key}: JSON ${row.json} / SQLite ${row.sqlite}`)
+    .join(' · ');
+  banner.textContent = `${parity.message}${mismatches ? ` (${mismatches})` : ''}`;
+}
+
+function renderProfitNote(profitConfidence) {
+  const note = getEl('dashboardProfitNote');
+  if (!note || !profitConfidence) {
+    if (note) note.hidden = true;
+    return;
+  }
+  note.hidden = false;
+  const pct = profitConfidence.reliablePct != null ? `%${profitConfidence.reliablePct} güvenilir` : '';
+  note.textContent = [profitConfidence.footnote, pct].filter(Boolean).join(' · ');
+}
+
+function renderMatchingKpi(matching) {
+  const kpiMatching = getEl('kpiMatching');
+  if (!kpiMatching) return;
+  const total = Number(matching?.queueTotal) || 0;
+  kpiMatching.textContent = String(total);
+  kpiMatching.className = total > 0
+    ? 'ops-kpi-value ops-kpi-value--warning'
+    : 'ops-kpi-value';
+}
+
+async function loadDashboardSummary() {
+  const authFetch = window.BuyBoxCommon?.authFetch?.bind(window.BuyBoxCommon);
+  if (!authFetch) return null;
+  try {
+    const response = await authFetch('/api/dashboard/summary?days=14');
+    const data = await response.json();
+    if (!response.ok) return null;
+    renderMatchingKpi(data.matching);
+    renderParityBanner(data.parity);
+    renderProfitNote(data.profitConfidence);
+    return data;
+  } catch {
+    return null;
+  }
+}
+
 async function loadDashboard(options = {}) {
   const silent = Boolean(options.silent);
   const ops = getOps();
@@ -116,6 +169,8 @@ async function loadDashboard(options = {}) {
       renderModeKpi(modeRes);
       renderPollNote(modeRes.poll);
     }
+
+    await loadDashboardSummary();
 
     if (channelSummary) {
       channelSummary.innerHTML = integrations.length

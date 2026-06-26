@@ -23,7 +23,8 @@ test('validateProductionConfig passes with minimal valid config', () => {
     YEMEKSEPETI_WEBHOOK_SECRET: 'wh-secret',
     YEMEKSEPETI_CLIENT_ID: 'cid',
     YEMEKSEPETI_CLIENT_SECRET: 'csec',
-    YEMEKSEPETI_VENDOR_ID: 'vid'
+    YEMEKSEPETI_VENDOR_ID: 'vid',
+    ENCRYPTION_KEY: 'x'.repeat(32)
   };
   const result = validateProductionConfig(env, env);
   assert.equal(result.ok, true);
@@ -39,7 +40,8 @@ test('validateProductionConfig allows short panel token when explicitly enabled'
     YEMEKSEPETI_WEBHOOK_SECRET: 'wh-secret',
     YEMEKSEPETI_CLIENT_ID: 'cid',
     YEMEKSEPETI_CLIENT_SECRET: 'csec',
-    YEMEKSEPETI_VENDOR_ID: 'vid'
+    YEMEKSEPETI_VENDOR_ID: 'vid',
+    ENCRYPTION_KEY: 'x'.repeat(32)
   };
   const result = validateProductionConfig(env, env);
   assert.equal(result.ok, true);

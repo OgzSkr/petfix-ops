@@ -69,6 +69,8 @@ function renderWorkerPanel(board) {
   if (!workerPanelBody || !board) return;
   const poll = board.workers?.opsPoll;
   const match = board.workers?.matchingSync;
+  const outbox = board.workers?.outboxRetry;
+  const daily = board.workers?.dailySync;
   const pollOn = poll?.settings?.enabled;
   const pollLine = poll
     ? `Sipariş çekme: ${pollOn ? 'açık' : 'kapalı'}${poll.scheduled ? ' (zamanlayıcı aktif)' : ''} · ${poll.settings?.intervalMinutes || 2} dk aralık`
@@ -77,7 +79,18 @@ function renderWorkerPanel(board) {
   const matchLine = match?.settings
     ? `Ürün güncelleme: ${match.settings.enabled ? 'açık' : 'kapalı'} · ${match.settings.intervalMinutes || '?'} dk aralık`
     : 'Ürün güncelleme: —';
-  workerPanelBody.innerHTML = `<p>${ops.escapeHtml(pollLine)}${pollRun ? ` · ${ops.escapeHtml(pollRun)}` : ''}</p><p>${ops.escapeHtml(matchLine)}</p>`;
+  const outboxLine = outbox
+    ? `Outbox: bekleyen ${outbox.queue?.pending || 0}, hatalı ${outbox.queue?.failed || 0}${outbox.scheduled ? ' · zamanlayıcı açık' : ''}`
+    : '';
+  const dailyLine = daily?.enabled
+    ? `Daily sync: ${daily.scheduled ? 'zamanlayıcı açık' : 'kapalı'}`
+    : '';
+  workerPanelBody.innerHTML = [
+    `<p>${ops.escapeHtml(pollLine)}${pollRun ? ` · ${ops.escapeHtml(pollRun)}` : ''}</p>`,
+    `<p>${ops.escapeHtml(matchLine)}</p>`,
+    outboxLine ? `<p>${ops.escapeHtml(outboxLine)}</p>` : '',
+    dailyLine ? `<p>${ops.escapeHtml(dailyLine)}</p>` : ''
+  ].filter(Boolean).join('');
 
   if (pollEnabledToggle) {
     pollEnabledToggle.checked = Boolean(poll?.settings?.enabled);
@@ -377,6 +390,24 @@ function renderSetupChecklist(checklist) {
   ops.bindCopyButtons(setupChecklistItems);
 }
 
+async function loadChannelCatalogNote(channel) {
+  if (!detailOpsNote || channel !== 'yemeksepeti') return;
+  try {
+    const status = await ops.api('/api/product-matching/status');
+    if (status.yemeksepetiCatalogTruncated) {
+      const pages = status.yemeksepetiCatalogPages || '?';
+      const next = status.yemeksepetiCatalogNextPage || 1;
+      detailOpsNote.textContent = `YS katalog eksik sync (${pages} sayfa) — sonraki run sayfa ${next}'den devam eder. Tam katalog için Kanallar > Ürün güncelleme sync veya webhook kullanın.`;
+      return;
+    }
+    if (status.yemeksepetiCatalogSyncedAt) {
+      detailOpsNote.textContent = `YS katalog: ${status.yemeksepetiCatalogProductCount || 0} ürün · ${ops.formatTime(status.yemeksepetiCatalogSyncedAt)}`;
+    }
+  } catch {
+    // checklist metni kalır
+  }
+}
+
 function renderDetailForm(detail) {
   const { meta, config, guide, enabled, status } = detail;
   if (detailLogo) {
@@ -409,6 +440,7 @@ function renderDetailForm(detail) {
   }
 
   renderSetupChecklist(detail.setupChecklist);
+  void loadChannelCatalogNote(detail.channel);
 
   guideSteps.innerHTML = (guide.steps || [])
     .map((step) => `<li>${ops.escapeHtml(ops.humanizeGuideStep(step))}</li>`)
