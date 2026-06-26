@@ -73,7 +73,7 @@ test('pruneAbsentCatalogChannelProducts removes uber catalog rows after absence'
   assert.equal(pm.channelProducts.length, 0);
 });
 
-test('pruneAbsentCatalogChannelProducts removes stale catalog rows but keeps manual matches', () => {
+test('pruneAbsentCatalogChannelProducts removes all absent catalog rows including manual matches', () => {
   const db = makeDb();
   const pm = db.productMatching;
   pm.channelProducts.push(
@@ -105,10 +105,9 @@ test('pruneAbsentCatalogChannelProducts removes stale catalog rows but keeps man
   );
 
   const result = pruneAbsentCatalogChannelProducts(pm, 'getir');
-  assert.equal(result.removedProducts, 1);
-  assert.equal(result.removedMappings, 1);
-  assert.equal(pm.channelProducts.length, 2);
-  assert.ok(pm.channelProducts.some((cp) => cp.channelProductId === 'keep-1'));
+  assert.equal(result.removedProducts, 2);
+  assert.equal(result.removedMappings, 2);
+  assert.equal(pm.channelProducts.length, 1);
   assert.ok(pm.channelProducts.some((cp) => cp.channelProductId === 'order-1'));
   assert.ok(shouldHideAbsentCatalogChannelProduct({
     ingestSource: 'getir_catalog',

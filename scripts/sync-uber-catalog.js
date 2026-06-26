@@ -7,6 +7,10 @@ import {
   mergeCatalogChannelProduct,
   enrichChannelProductsFromMaster
 } from '../lib/product-matching/channel-ingest/uber-eats.js';
+import {
+  markChannelCatalogPresence,
+  pruneAbsentCatalogChannelProducts
+} from '../lib/product-matching/source-presence.js';
 
 async function main() {
   console.log('TGO katalog senkronu başlıyor…');
@@ -38,8 +42,21 @@ async function main() {
     }
   }
 
+  markChannelCatalogPresence(
+    pm,
+    'uber-eats',
+    ingest.channelProducts.map((row) => row.channelProductId),
+    ingest.summary?.ingestedAt || ingest.summary?.catalogSyncedAt
+  );
+
+  const pruned = pruneAbsentCatalogChannelProducts(pm, 'uber-eats');
+
   pm.meta.channelIngest = pm.meta.channelIngest || {};
-  pm.meta.channelIngest['uber-eats-catalog'] = ingest.summary;
+  pm.meta.channelIngest['uber-eats-catalog'] = {
+    ...ingest.summary,
+    prunedAbsent: pruned.removedProducts,
+    prunedMappings: pruned.removedMappings
+  };
   db.meta = db.meta || {};
   db.meta.updatedAt = new Date().toISOString();
   await writeDb(db);
@@ -48,9 +65,11 @@ async function main() {
     ok: true,
     added,
     updated,
-    total: existing.size,
+    total: pm.channelProducts.filter((cp) => cp.channelId === 'uber-eats').length,
     catalogProducts: ingest.channelProducts.length,
     withImages,
+    prunedAbsent: pruned.removedProducts,
+    prunedMappings: pruned.removedMappings,
     storeId: ingest.summary?.storeId || null
   }, null, 2));
 }
