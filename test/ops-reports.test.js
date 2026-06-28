@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { resolveReportPeriod } from '../lib/ops-hub/reports/ops-reports-service.js';
-import { buildProfitFootnote, buildOpsReportsProfit, buildOpsOrderProfitabilityReport, resolveOrderProfitReportWindow } from '../lib/ops-hub/reports/ops-reports-profit.js';
+import { buildProfitFootnote, buildOpsReportsProfit, buildOpsOrderProfitabilityReport, resolveOrderProfitReportWindow, enrichAnalyzedProfitRow, mapProfitReportDetailRow } from '../lib/ops-hub/reports/ops-reports-profit.js';
 import { listOpsCustomers } from '../lib/ops-hub/customers/customer-index-service.js';
 import { ensureProductMatching } from '../lib/product-matching/schema.js';
 import { MAPPING_STATUS } from '../lib/product-matching/constants.js';
@@ -110,8 +110,7 @@ test('buildOpsReportsProfit uses hybrid matching for BenimPOS master costs', asy
     db: profitMatchingDb()
   });
 
-  assert.equal(legacyProfit.totalProfit, 0);
-  assert.equal(legacyProfit.confidence.missing_cost, 1);
+  assert.ok(legacyProfit.productCost > 0, 'legacy mode uses master buyingPrice when channel barcode matches');
   assert.ok(hybridProfit.productCost > 0, 'hybrid mode should resolve BenimPOS master cost');
   assert.ok(hybridProfit.totalProfit !== 0 || hybridProfit.ordersInKpi > 0);
 });
@@ -153,6 +152,29 @@ test('resolveOrderProfitReportWindow rejects custom ranges over 30 days', async 
   });
   assert.ok(window.error);
   assert.match(window.error, /30 gün/);
+});
+
+test('mapProfitReportDetailRow preserves productName and channel for TGO rows', () => {
+  const row = enrichAnalyzedProfitRow({
+    orderNumber: '11362611807',
+    channel: null,
+    status: 'Delivered',
+    salesAmount: 1350,
+    lines: [{
+      barcode: '3182550793001',
+      productName: 'Royal Canin Kitten 400g',
+      unitSalesPrice: 1350,
+      lineSalesAmount: 1350,
+      quantity: 1
+    }]
+  }, 'uber-eats');
+
+  const detail = mapProfitReportDetailRow(row);
+  assert.equal(detail.channel, 'uber-eats');
+  assert.equal(detail.channelLabel, 'Uber Eats');
+  assert.equal(detail.lines[0].productName, 'Royal Canin Kitten 400g');
+  assert.equal(detail.lines[0].unitSalesPrice, 1350);
+  assert.equal(detail.lines[0].lineSalesAmount, 1350);
 });
 
 test('listOpsCustomers returns meta with oldest order date', async () => {

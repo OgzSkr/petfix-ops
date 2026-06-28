@@ -74,16 +74,9 @@
     return `${get('day')} ${month} ${get('year')} - ${get('hour')}:${get('minute')}`;
   }
 
-  function channelLogos() {
-    return window.PetFixChannelLogos || window.BuyBoxChannelLogos || null;
-  }
-
   function renderChannelLogo(channelId) {
-    const logos = channelLogos();
-    if (channelId && logos?.render) {
-      return logos.render(channelId, { size: 'sm' });
-    }
-    return '<span class="pf-channel-logo pf-channel-logo--sm">?</span>';
+    return window.OpsOrderDetail?.renderChannelLogo?.(channelId)
+      || '<span class="pf-channel-logo pf-channel-logo--sm">?</span>';
   }
 
   function syncCustomDateFields() {
@@ -290,27 +283,6 @@
     });
   }
 
-  function detailItem(label, value) {
-    return `<div><span>${esc(label)}</span><strong>${value}</strong></div>`;
-  }
-
-  function renderLineItems(lines) {
-    if (!lines?.length) {
-      return '<p class="muted">Ürün satırı yok.</p>';
-    }
-    const rows = lines.map((line) => `<tr>
-      <td>${esc(line.title || line.barcode || '—')}</td>
-      <td>${esc(line.barcode || '—')}</td>
-      <td class="ops-money">${Number(line.quantity) || 0}</td>
-      <td class="ops-money">₺${formatMoney(line.unitPrice)}</td>
-      <td class="ops-money">₺${formatMoney(line.lineTotal)}</td>
-    </tr>`).join('');
-    return `<table class="ops-detail-lines-table">
-      <thead><tr><th>Ürün</th><th>Barkod</th><th>Adet</th><th>Birim</th><th>Toplam</th></tr></thead>
-      <tbody>${rows}</tbody>
-    </table>`;
-  }
-
   function closeModal() {
     const modal = getEl('orderProfitModalBackdrop');
     if (!modal) return;
@@ -331,33 +303,11 @@
     const body = getEl('orderProfitModalBody');
     if (!modal || !title || !body) return;
 
-    title.textContent = 'Sipariş #' + (row.orderNumber || '—');
-    const warnings = [...new Set([...(row.dataWarnings || []), ...(row.matchingWarnings || [])])];
-    const channelBlock = renderChannelLogo(row.channel) + ' ' + esc(row.channelLabel || row.channel || '—');
-
-    body.innerHTML =
-      (warnings.length ? `<p class="orders-warn-box">${esc(warnings.join(' · '))}</p>` : '') +
-      '<div class="detail-grid">' +
-        detailItem('Kanal', channelBlock) +
-        (row.customerName ? detailItem('Müşteri', esc(row.customerName)) : '') +
-        (row.deliveryMethod ? detailItem('Teslimat', esc(row.deliveryMethod)) : '') +
-        detailItem('Sipariş tarihi', esc(formatOrderDate(row.orderDateMs) || row.orderDate || '—')) +
-        detailItem('Durum', esc(row.status || '—')) +
-        detailItem('Kâr güveni', esc(row.profitConfidenceLabel || row.profitConfidence || '—')) +
-        detailItem('Tutar', '₺' + formatMoney(row.salesAmount)) +
-        detailItem('Ürün maliyeti', '₺' + formatMoney(row.productCost)) +
-        detailItem('Ek maliyet', '₺' + formatMoney(row.extraCost)) +
-        detailItem('Komisyon', '₺' + formatMoney(row.commissionAmount)) +
-        detailItem('Kurye ücreti', '₺' + formatMoney(row.shippingCost)) +
-        detailItem('Hizmet bedeli', '₺' + formatMoney(row.serviceFee)) +
-        detailItem('Stopaj', '₺' + formatMoney(row.stopajAmount)) +
-        detailItem('Net kâr', formatSignedMoney(row.netProfit)) +
-        detailItem('Kâr oranı', formatPercent(row.profitRate)) +
-        detailItem('Kâr marjı', formatPercent(row.profitMargin)) +
-      '</div>' +
-      '<h4 class="ops-detail-lines-heading">Ürünler</h4>' +
-      renderLineItems(row.lines);
-
+    title.textContent = 'Sipariş Detayı';
+    const render = window.OpsOrderDetail?.renderBody;
+    body.innerHTML = render
+      ? render(row, { showProfitSummary: true })
+      : '<p class="muted">Detay modülü yüklenemedi.</p>';
     showModal();
   }
 
@@ -371,7 +321,7 @@
 
     const body = getEl('orderProfitModalBody');
     if (body) {
-      getEl('orderProfitModalTitle').textContent = 'Sipariş #' + orderNumber;
+      getEl('orderProfitModalTitle').textContent = 'Sipariş Detayı';
       body.innerHTML = '<p class="muted">Yükleniyor…</p>';
       showModal();
     }
@@ -389,7 +339,12 @@
   async function loadReport() {
     const authFetch = window.BuyBoxCommon?.authFetch?.bind(window.BuyBoxCommon);
     const body = getEl('orderProfitBody');
-    if (!authFetch) return;
+    const note = getEl('orderProfitNote');
+    if (!authFetch) {
+      if (note) note.textContent = 'Oturum veya panel betikleri yüklenemedi — sayfayı yenileyin.';
+      if (body) body.innerHTML = '<tr><td colspan="9" class="muted">Yüklenemedi</td></tr>';
+      return;
+    }
     readFiltersFromForm();
     const rangeError = validateCustomRange();
     if (rangeError) {

@@ -1022,6 +1022,17 @@
   margin: 0;
 }
 
+.ops-reports-section-nav {
+  margin: 0 0 12px;
+}
+
+a.orders-subnav-tab.ops-reports-section-tab {
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .ops-info-stack {
   display: grid;
   gap: 8px;

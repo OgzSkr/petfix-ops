@@ -154,7 +154,7 @@ function renderBarChart(container, items, {
 
 function renderChannelBreakdown(items = []) {
   const container = getEl('channelBreakdown');
-  const logos = window.PetFixChannelLogos || window.ChannelLogos;
+  const logos = window.PetFixChannelLogos || window.BuyBoxChannelLogos;
   if (!container) return;
   if (!items.length) {
     container.innerHTML = renderEmptyState('Kanal verisi yok.');
@@ -261,7 +261,10 @@ function buildReportsQuery() {
 async function loadReports() {
   const authFetch = window.BuyBoxCommon?.authFetch?.bind(window.BuyBoxCommon);
   const note = getEl('reportsNote');
-  if (!authFetch) return;
+  if (!authFetch) {
+    if (note) note.textContent = 'Oturum veya panel betikleri yüklenemedi — sayfayı yenileyin.';
+    return;
+  }
   document.querySelectorAll('#reportsKpiRow .ops-stat-card').forEach((card) => card.classList.add('is-loading'));
   try {
     const response = await authFetch(`/api/ops/reports?${buildReportsQuery()}`);

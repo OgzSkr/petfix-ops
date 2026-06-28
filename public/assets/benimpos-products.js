@@ -584,6 +584,7 @@
             </div>
           </div>
         </td>
+        <td class="bp-num bp-buy-price${Number(row.buyingPrice) > 0 ? '' : ' bp-buy-price--missing'}" title="Kâr hesabı kaynağı — BenimPOS sync ile güncellenir">${Number(row.buyingPrice) > 0 ? formatMoney(row.buyingPrice) : '—'}</td>
         <td class="bp-num bp-pos-price">${formatMoney(row.salePrice1)}</td>
         ${DISPLAY_CHANNELS.map((channel) => renderChannelCell(row, channel)).join('')}
       </tr>`;
@@ -594,7 +595,7 @@
   }
 
   function tableColspan() {
-    return isMatchingView() ? 7 : 5;
+    return isMatchingView() ? 7 : 6;
   }
 
   function channelLabel(channelId) {
@@ -672,6 +673,7 @@
           <span>Ürün Bilgisi</span>
         </div>
       </th>
+      <th scope="col">Alış (maliyet)</th>
       <th scope="col">Kasa satış</th>
       ${DISPLAY_CHANNELS.map((ch) => {
         const logo = window.PetFixChannelLogos?.render

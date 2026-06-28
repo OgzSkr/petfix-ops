@@ -44,6 +44,7 @@
     "prod:down": "docker compose -f compose.prod.yml --env-file .env.production down",
     "prod:deploy": "bash scripts/deploy-production.sh",
     "prod:backfill-ys-payload": "node scripts/ops-backfill-ys-payload.js",
+    "prod:backfill-order-line-costs": "node scripts/ops-backfill-order-line-costs.js",
     "ops:autopilot": "node scripts/ops-autopilot.js",
     "ops:prod-daily-sync": "node scripts/ops-prod-daily-sync.js",
     "ops:install-poll": "bash scripts/ops-install-poll-agent.sh",

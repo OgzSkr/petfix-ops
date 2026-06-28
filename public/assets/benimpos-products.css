@@ -678,6 +678,16 @@
   color: #111827;
 }
 
+.bp-buy-price {
+  font-weight: 600;
+  color: #111827;
+}
+
+.bp-buy-price--missing {
+  color: #b45309;
+  font-weight: 600;
+}
+
 .bp-pos-stock {
   font-weight: 600;
   text-align: right;
